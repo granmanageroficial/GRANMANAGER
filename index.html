@@ -651,6 +651,7 @@
     <div class="masthead">GRAN&nbsp;<span>MANAGER</span></div>
     <div style="text-align:right;">
       <div class="dateline" id="dateline"></div>
+      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build IDFIX-01</div>
       <div class="dateline" id="userLine" style="margin-top:4px;">
         <span id="userLabel"></span><span id="frenzyBadge" style="display:none; color:var(--alert); font-weight:700;"> · 🔥 FRENÉTICO</span> · <button class="link-btn" id="manualSaveBtn" title="Forzar guardado de la partida">💾 Guardar</button> · <button class="link-btn" id="exportSaveBtn" title="Descargar una copia de seguridad como archivo">⬇️ Copia</button> · <button class="link-btn" id="importSaveBtn" title="Restaurar una copia de seguridad desde archivo">⬆️ Restaurar</button><input type="file" id="importSaveInput" accept="application/json" style="display:none;"> · <button class="link-btn" id="logoutBtn">Cerrar sesión</button>
       </div>
@@ -4178,6 +4179,9 @@ function instantiateEvent(tier){
 
 let spinning = false;
 document.getElementById('spinBtn').addEventListener('click', () => {
+  // --- DIAGNÓSTICO TEMPORAL Nº2: confirma primero que el click LLEGA a este handler, y después
+  // por qué rama pasa. Se saca en cuanto encontremos la causa real. ---
+  alert('DIAGNÓSTICO 2/2: el click SÍ llegó al botón. spinning=' + spinning + ' | activeMatchId=' + activeMatchId + ' | build=IDFIX-01');
   if(spinning || !activeMatchId) return;
   const m = state.matches.find(x=>x.id===activeMatchId);
   // Bug real: si el partido que se estaba viendo ya no existe en state.matches (por ejemplo,
