@@ -1358,6 +1358,45 @@ let nextId = 1;
 let activeMatchId = null;
 let currentScorers = [];
 
+// Bug real: jugadores y partidos comparten el mismo contador de IDs (nextId). Si por algún
+// motivo ese contador queda desincronizado respecto de los IDs que ya están en uso (por ejemplo,
+// tras una recuperación de partida vieja desde la nube), un partido o jugador nuevo puede
+// terminar con el MISMO id que uno que ya existía. Como la app identifica cada partido por ese
+// número, eso hace que al abrir el partido "nuevo" en realidad encuentre datos del viejo (con
+// resultado ya cargado) — la ruleta parece trabada porque, técnicamente, ya giró para ese id.
+// allocateId() nunca entrega un número que ya esté en uso en jugadores o partidos, sin importar
+// en qué estado haya quedado nextId.
+function allocateId(){
+  let maxUsed = nextId - 1;
+  state.players.forEach(p => { if(typeof p.id === 'number' && p.id > maxUsed) maxUsed = p.id; });
+  state.matches.forEach(m => { if(typeof m.id === 'number' && m.id > maxUsed) maxUsed = m.id; });
+  nextId = Math.max(nextId, maxUsed + 1);
+  return nextId++;
+}
+
+// Repara partidas ya guardadas que hayan quedado con dos jugadores o dos partidos compartiendo
+// el mismo id (el síntoma real: la ruleta de un partido "nuevo" no giraba porque encontraba los
+// datos de uno viejo con el mismo número). Al detectar un duplicado, se le asigna un id nuevo al
+// que se creó más tarde (el jugador/partido más viejo conserva el suyo).
+function repairDuplicateIds(){
+  let maxUsed = nextId - 1;
+  state.players.forEach(p => { if(typeof p.id === 'number' && p.id > maxUsed) maxUsed = p.id; });
+  state.matches.forEach(m => { if(typeof m.id === 'number' && m.id > maxUsed) maxUsed = m.id; });
+  const seen = new Set();
+  let changed = false;
+  const items = [...state.players, ...state.matches];
+  for(const item of items){
+    if(typeof item.id !== 'number' || seen.has(item.id)){
+      maxUsed += 1;
+      item.id = maxUsed;
+      changed = true;
+    }
+    seen.add(item.id);
+  }
+  if(maxUsed >= nextId) nextId = maxUsed + 1;
+  return changed;
+}
+
 function renderGameDate(){
   const el = document.getElementById('dateline');
   const lastPlayed = state.timeline && state.timeline.length ? state.timeline[0] : null;
@@ -2188,7 +2227,7 @@ document.getElementById('addPlayer').addEventListener('click', () => {
     alert('El plantel ya tiene el máximo de 50 jugadores.');
     return;
   }
-  state.players.push({ id: nextId++, name, pos, tier, status:'Disponible' });
+  state.players.push({ id: allocateId(), name, pos, tier, status:'Disponible' });
   state.eventHistory.unshift({ matchId:null, rival:'', date:'', tag:'MERCADO', title:`Incorporación: ${name}`, body:`${name} se suma al plantel de ${state.profile.club || 'el club'}.` });
   document.getElementById('pName').value='';
   renderPlayers();
@@ -2373,7 +2412,7 @@ document.getElementById('addMatch').addEventListener('click', () => {
   const date = document.getElementById('mDate').value.trim();
   const importanceValue = document.getElementById('mImportance').value;
   if(!rival) return;
-  state.matches.push({ id: nextId++, rival, date, comp, importance: importanceValue, status:'pendiente', event:null, result:null });
+  state.matches.push({ id: allocateId(), rival, date, comp, importance: importanceValue, status:'pendiente', event:null, result:null });
   document.getElementById('mRival').value='';
   document.getElementById('mDate').value='';
   renderMatches();
@@ -4139,30 +4178,23 @@ function instantiateEvent(tier){
 
 let spinning = false;
 document.getElementById('spinBtn').addEventListener('click', () => {
-  // --- DIAGNÓSTICO TEMPORAL: si el botón no reacciona, esto muestra por qué en vez de
-  // quedarse mudo. Una vez que encontremos la causa real, esto se saca. ---
-  if(spinning){
-    alert('DIAGNÓSTICO: el botón está marcado como "ya girando" (spinning=true) y por eso no hace nada. activeMatchId=' + activeMatchId);
-    return;
-  }
-  if(!activeMatchId){
-    alert('DIAGNÓSTICO: no hay ningún partido activo (activeMatchId vacío), por eso no gira.');
-    return;
-  }
+  if(spinning || !activeMatchId) return;
   const m = state.matches.find(x=>x.id===activeMatchId);
   // Bug real: si el partido que se estaba viendo ya no existe en state.matches (por ejemplo,
   // porque se volvió a cargar una partida guardada más vieja mientras esta pantalla seguía
   // abierta), el botón se quedaba "colgado": no tiraba error, pero tampoco giraba nunca, sin
   // ningún aviso. Ahora, en vez de fallar en silencio, se avisa y se vuelve al calendario.
   if(!m){
-    alert('Este partido ya no está en tu calendario actual (puede que la partida se haya recargado). Volvé al calendario y abrilo de nuevo. [DIAGNÓSTICO: activeMatchId=' + activeMatchId + ']');
+    alert('Este partido ya no está en tu calendario actual (puede que la partida se haya recargado). Volvé al calendario y abrilo de nuevo.');
     closeMatchView();
     switchTab('calendario');
     renderMatches();
     return;
   }
   if(m.event){
-    alert('DIAGNÓSTICO: este partido ya tiene un evento cargado (tag: ' + (m.event.tag || '???') + '), por eso el botón no gira de nuevo. id=' + m.id);
+    // Ya se giró para este partido (por ejemplo, un doble toque). En vez de quedarse mudo,
+    // se refresca la pantalla para reflejar el resultado que ya existe.
+    loadMatchIntoZone(m.id);
     return;
   }
   spinning = true;
@@ -5441,7 +5473,7 @@ function loadSampleData(){
     ['Savinho', 'DEL', 22],
     ['Oscar Bobb', 'DEL', 23],
   ];
-  state.players = samplePlayers.map(([name,pos,age]) => ({ id: nextId++, name, pos, age, status:'Disponible' }));
+  state.players = samplePlayers.map(([name,pos,age]) => ({ id: allocateId(), name, pos, age, status:'Disponible' }));
 
   const sampleMatches = [
     ['Arsenal', '14 sep', 'Premier League'],
@@ -5451,7 +5483,7 @@ function loadSampleData(){
     ['Real Madrid', '2 oct', 'Champions League'],
     ['Liverpool', '5 oct', 'Premier League'],
   ];
-  state.matches = sampleMatches.map(([rival,date,comp]) => ({ id: nextId++, rival, date, comp, status:'pendiente', event:null, result:null }));
+  state.matches = sampleMatches.map(([rival,date,comp]) => ({ id: allocateId(), rival, date, comp, status:'pendiente', event:null, result:null }));
 
   state.eventHistory = [];
 
@@ -5609,6 +5641,7 @@ document.getElementById('importSaveInput').addEventListener('change', (e) => {
     if(!state.coachStability) state.coachStability = { cooldown:0, threatWarned:false, pressureFlags:{}, warnFlags:{} };
     if(!state.stintStats) state.stintStats = { played:0, won:0, drawn:0, lost:0, seasons:0, titles:0 };
     if(!state.pendingFutureEvents) state.pendingFutureEvents = [];
+    repairDuplicateIds();
     document.getElementById('dtName').value = state.profile.name || '';
     document.getElementById('dtClub').value = state.profile.club || '';
     document.getElementById('dtYear').value = state.profile.year || '';
@@ -5663,6 +5696,10 @@ function startApp(user, pin, loadedData){
     if(state.consecutiveLosses === undefined) state.consecutiveLosses = 0;
     if(!state.stintStats) state.stintStats = { played:0, won:0, drawn:0, lost:0, seasons:0, titles:0 };
     if(!state.pendingFutureEvents) state.pendingFutureEvents = [];
+    // Repara automáticamente partidos/jugadores que hayan quedado compartiendo el mismo id
+    // (el síntoma: la ruleta de un partido "nuevo" no giraba porque encontraba, con ese mismo
+    // número, los datos de uno viejo ya resuelto).
+    repairDuplicateIds();
     if(state.profile.league && LEAGUE_DB[state.profile.league]){
       leagueSelect.value = state.profile.league;
       updateClubOptions();
