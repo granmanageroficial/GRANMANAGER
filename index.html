@@ -4139,20 +4139,32 @@ function instantiateEvent(tier){
 
 let spinning = false;
 document.getElementById('spinBtn').addEventListener('click', () => {
-  if(spinning || !activeMatchId) return;
+  // --- DIAGNÓSTICO TEMPORAL: si el botón no reacciona, esto muestra por qué en vez de
+  // quedarse mudo. Una vez que encontremos la causa real, esto se saca. ---
+  if(spinning){
+    alert('DIAGNÓSTICO: el botón está marcado como "ya girando" (spinning=true) y por eso no hace nada. activeMatchId=' + activeMatchId);
+    return;
+  }
+  if(!activeMatchId){
+    alert('DIAGNÓSTICO: no hay ningún partido activo (activeMatchId vacío), por eso no gira.');
+    return;
+  }
   const m = state.matches.find(x=>x.id===activeMatchId);
   // Bug real: si el partido que se estaba viendo ya no existe en state.matches (por ejemplo,
   // porque se volvió a cargar una partida guardada más vieja mientras esta pantalla seguía
   // abierta), el botón se quedaba "colgado": no tiraba error, pero tampoco giraba nunca, sin
   // ningún aviso. Ahora, en vez de fallar en silencio, se avisa y se vuelve al calendario.
   if(!m){
-    alert('Este partido ya no está en tu calendario actual (puede que la partida se haya recargado). Volvé al calendario y abrilo de nuevo.');
+    alert('Este partido ya no está en tu calendario actual (puede que la partida se haya recargado). Volvé al calendario y abrilo de nuevo. [DIAGNÓSTICO: activeMatchId=' + activeMatchId + ']');
     closeMatchView();
     switchTab('calendario');
     renderMatches();
     return;
   }
-  if(m.event) return;
+  if(m.event){
+    alert('DIAGNÓSTICO: este partido ya tiene un evento cargado (tag: ' + (m.event.tag || '???') + '), por eso el botón no gira de nuevo. id=' + m.id);
+    return;
+  }
   spinning = true;
   document.getElementById('spinBtn').disabled = true;
 
