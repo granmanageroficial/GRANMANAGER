@@ -534,6 +534,10 @@
   .checklist-item.pending .tick{ color: var(--ink-dim); }
   .checklist-item.ok{ color: var(--ink-dim); text-decoration: line-through; }
 </style>
+<!-- Firebase (compat SDK): guardado en la nube, además del localStorage local, para que la
+     partida no dependa únicamente del navegador de un dispositivo puntual. -->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 </head>
 <body>
 <div class="bg-blobs"><div class="b1"></div><div class="b2"></div><div class="b3"></div></div>
@@ -583,11 +587,13 @@
       <option value="retiro">Retiro del fútbol</option>
       <option value="fin_contrato">Fin de contrato</option>
       <option value="venta">Venta / transferencia</option>
+      <option value="prestamo">Préstamo a otro club</option>
+      <option value="liberado">Liberar jugador (rescisión)</option>
     </select>
     <div id="removeSaleFields" style="display:none; margin-top:12px;">
       <div class="field-row">
         <div>
-          <label>Monto de la venta</label>
+          <label id="removeSaleAmountLabel">Monto de la venta</label>
           <input id="removeSaleAmount" type="text" placeholder="Ej: 45 millones" autocomplete="off">
         </div>
         <div>
@@ -608,6 +614,10 @@
     <div class="result-tag" id="alertTag">SIN NOVEDAD</div>
     <div class="result-title" id="alertTitle"></div>
     <div class="result-body" id="alertBody"></div>
+    <div id="alertGameInstruction" style="display:none; margin-top:12px; padding:12px 14px; border-radius:10px; border:1px solid #35E6C5; background:rgba(53,230,197,0.08);">
+      <div style="font-size:11px; font-weight:700; letter-spacing:0.5px; color:#35E6C5; margin-bottom:4px;">📋 EN TU FC26/27</div>
+      <div id="alertGameInstructionText" class="dateline" style="color:var(--ink); font-size:14px;"></div>
+    </div>
     <div id="alertDecisionBox" style="display:none; margin-top:16px;">
       <div class="dateline" style="margin-bottom:8px;">¿Qué decidís, técnico?</div>
       <div class="decision-row" id="alertDecisionOptions"></div>
@@ -642,10 +652,18 @@
     <div style="text-align:right;">
       <div class="dateline" id="dateline"></div>
       <div class="dateline" id="userLine" style="margin-top:4px;">
-        <span id="userLabel"></span><span id="frenzyBadge" style="display:none; color:var(--alert); font-weight:700;"> · 🔥 FRENÉTICO</span> · <button class="link-btn" id="logoutBtn">Cerrar sesión</button>
+        <span id="userLabel"></span><span id="frenzyBadge" style="display:none; color:var(--alert); font-weight:700;"> · 🔥 FRENÉTICO</span> · <button class="link-btn" id="manualSaveBtn" title="Forzar guardado de la partida">💾 Guardar</button> · <button class="link-btn" id="exportSaveBtn" title="Descargar una copia de seguridad como archivo">⬇️ Copia</button> · <button class="link-btn" id="importSaveBtn" title="Restaurar una copia de seguridad desde archivo">⬆️ Restaurar</button><input type="file" id="importSaveInput" accept="application/json" style="display:none;"> · <button class="link-btn" id="logoutBtn">Cerrar sesión</button>
       </div>
     </div>
   </header>
+
+  <div id="saveFailBanner" style="display:none; background:#3a1414; border:1px solid var(--alert); color:#ffb4b4; padding:10px 14px; border-radius:10px; margin-bottom:14px; font-family:'Barlow Condensed', sans-serif; font-size:14px; line-height:1.4;">
+    ⚠️ El guardado automático está fallando (posiblemente la memoria del navegador está llena). Hacé clic en <strong>⬇️ Copia</strong> ahora mismo para no perder tu partida, y liberá espacio o cambiá de navegador.
+  </div>
+
+  <div id="cloudSyncFailBanner" style="display:none; background:#2a2410; border:1px solid #a68b1f; color:#f0d878; padding:10px 14px; border-radius:10px; margin-bottom:14px; font-family:'Barlow Condensed', sans-serif; font-size:14px; line-height:1.4;">
+    ☁️ No se pudo sincronizar tu partida con la nube (puede ser falta de conexión). Se guardó localmente igual; cuando tengas señal se sincroniza sola.
+  </div>
 
   <nav id="tabs">
     <button data-tab="resumen" class="active">Inicio</button>
@@ -959,8 +977,10 @@
           <option value="MCD">MCD - Mediocentro defensivo</option>
           <option value="MC">MC - Mediocentro</option>
           <option value="MCO">MCO - Mediapunta</option>
-          <option value="MI">MI - Interior/extremo izquierdo</option>
-          <option value="MD">MD - Interior/extremo derecho</option>
+          <option value="MI">MI - Interior izquierdo</option>
+          <option value="MD">MD - Interior derecho</option>
+          <option value="EI">EI - Extremo izquierdo</option>
+          <option value="ED">ED - Extremo derecho</option>
           <option value="DC">DC - Delantero centro</option>
         </select>
       </div>
@@ -1040,6 +1060,10 @@
             <div class="result-tag" id="resultTag">SIN NOVEDAD</div>
             <div class="result-title" id="resultTitle"></div>
             <div class="result-body" id="resultBody"></div>
+            <div id="resultGameInstruction" style="display:none; margin-top:12px; padding:12px 14px; border-radius:10px; border:1px solid #35E6C5; background:rgba(53,230,197,0.08);">
+              <div style="font-size:11px; font-weight:700; letter-spacing:0.5px; color:#35E6C5; margin-bottom:4px;">📋 EN TU FC26/27</div>
+              <div id="resultGameInstructionText" class="dateline" style="color:var(--ink); font-size:14px;"></div>
+            </div>
             <div id="decisionBox" style="display:none;">
               <div class="decision-row" id="decisionOptions"></div>
               <div class="decision-note empty-note" id="decisionNote" style="display:none;"></div>
@@ -1113,7 +1137,10 @@ const LEAGUE_DB = {
     clubs: ['Boca Juniors','River Plate','Racing Club','Independiente','San Lorenzo','Vélez Sarsfield','Estudiantes de La Plata','Gimnasia La Plata','Huracán','Lanús','Argentinos Juniors','Banfield','Barracas Central','Defensa y Justicia','Platense','Tigre','Aldosivi','Deportivo Riestra','Talleres','Belgrano','Instituto','Estudiantes de Río Cuarto','Rosario Central','Newell\'s Old Boys','Unión de Santa Fe','Gimnasia y Esgrima de Mendoza','Independiente Rivadavia','Central Córdoba','Atlético Tucumán','Sarmiento']
   },
   'Liga MX': {
-    competitions: ['Liga MX', 'Leagues Cup', 'Concachampions'],
+    // La Liga MX se juega en dos torneos cortos (Apertura y Clausura), cada uno con su propia
+    // fase regular + liguilla de playoffs, y sin competencias internacionales por defecto
+    // (Leagues Cup y Concachampions se sacaron de acá por ser cruces con clubes de otros países).
+    competitions: ['Torneo Apertura', 'Torneo Clausura'],
     clubs: ['América','Guadalajara','Cruz Azul','Pumas UNAM','Tigres UANL','Monterrey','Toluca','León','Necaxa','Atlas','Pachuca','Santos Laguna','Puebla','Atlético San Luis','Juárez','Mazatlán','Querétaro','Tijuana']
   },
   'MLS': {
@@ -1161,11 +1188,20 @@ function competitionKind(comp){
 }
 
 const IMPORTANCE_OPTIONS = {
+  // Muchas ligas (Liga MX, MLS, Liga Profesional Argentina, etc.) definen a su campeón por
+  // fase de todos contra todos + playoffs/liguilla, no solo por tabla. Estas fases de playoff
+  // se agregan acá (dentro de "liga", junto al resto) para que estén disponibles en CUALQUIER
+  // liga que las use, Liga MX incluida, que antes solo tenía clásico/superclásico/definitorio.
   liga: [
     { value:'normal', label:'Partido normal', mult:1 },
     { value:'clasico', label:'Clásico', mult:1.6 },
     { value:'superclasico', label:'Superclásico', mult:2.4 },
     { value:'definitorio', label:'Partido definitorio', mult:1.8 },
+    { value:'reclasificacion', label:'Play-in / Repechaje (playoff)', mult:1.5 },
+    { value:'octavos', label:'Octavos de final (playoff)', mult:1.7 },
+    { value:'cuartos', label:'Cuartos de final (playoff)', mult:1.9 },
+    { value:'semifinal_playoff', label:'Semifinal (playoff)', mult:2.2 },
+    { value:'final_playoff', label:'Final / Gran Final (playoff)', mult:2.8 },
   ],
   copa: [
     { value:'fase_grupos', label:'Fase de grupos', mult:0.8 },
@@ -1221,11 +1257,12 @@ function importanceInfo(comp, value){
 
 // ------------------ ESTADO EN MEMORIA ------------------
 const state = {
-  profile: { name:'', club:'', year:'', goal:'', photo:null, league:'', competitions:[], competitionObjectives:{}, competitionPriority:{}, objectivesLocked:false },
+  profile: { name:'', club:'', year:'', goal:'', photo:null, league:'', competitions:[], competitionObjectives:{}, competitionPriority:{}, objectivesLocked:false, competitionNotPlayed:{}, competitionResolvedThisSeason:{} },
   onboardingComplete: false,
   deceased: false,
   frenzyMode: false,
   coachStability: { cooldown: 0, threatWarned: false, pressureFlags: {}, warnFlags: {} },
+  financeCrisis: { active: null, strikes: 0 },
   consecutiveLosses: 0,
   stintStats: { played:0, won:0, drawn:0, lost:0, seasons:0, titles:0 },
   pendingFutureEvents: [],
@@ -1339,7 +1376,7 @@ renderGameDate();
 const RESTRICTED_TABS = ['resumen', 'palmares', 'carrera'];
 function onboardingRequirementsMet(){
   return !!(state.profile.name && state.profile.club &&
-    state.players.length >= 16 && state.players.length <= 30 &&
+    state.players.length >= 16 && state.players.length <= 50 &&
     state.matches.length >= 6);
 }
 
@@ -1382,21 +1419,27 @@ const OBJECTIVE_OPTIONS = [
 function renderObjectivesByComp(competitions){
   const list = document.getElementById('dtObjectivesList');
   const locked = !!state.profile.objectivesLocked;
+  const notPlayed = state.profile.competitionNotPlayed || {};
   list.innerHTML = competitions.map(c => {
     const current = state.profile.competitionObjectives[c] || '';
     const currentPriority = (state.profile.competitionPriority && state.profile.competitionPriority[c]) || 'medio';
+    const isNotPlayed = !!notPlayed[c];
     return `
     <div class="field-row" style="margin-bottom:8px;">
       <div style="grid-column:1/-1; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
         <label style="min-width:180px; margin:0;">${c}</label>
-        <select class="comp-objective-select" data-comp="${c}" style="flex:1; min-width:180px;" ${locked?'disabled':''}>
+        <select class="comp-objective-select" data-comp="${c}" style="flex:1; min-width:180px;" ${locked||isNotPlayed?'disabled':''}>
           ${OBJECTIVE_OPTIONS.map(o => `<option value="${o}" ${o===current?'selected':''}>${o}</option>`).join('')}
         </select>
-        <select class="comp-priority-select" data-comp="${c}" style="min-width:150px;" ${locked?'disabled':''}>
+        <select class="comp-priority-select" data-comp="${c}" style="min-width:150px;" ${locked||isNotPlayed?'disabled':''}>
           <option value="obligatorio" ${currentPriority==='obligatorio'?'selected':''}>🔴 Obligatorio</option>
           <option value="medio" ${currentPriority==='medio'?'selected':''}>🟡 Nivel medio</option>
           <option value="bajo" ${currentPriority==='bajo'?'selected':''}>🟢 Nivel bajo</option>
         </select>
+        <label style="display:flex; align-items:center; gap:6px; min-width:auto; font-weight:400; opacity:0.85;">
+          <input type="checkbox" class="comp-notplayed-check" data-comp="${c}" ${isNotPlayed?'checked':''} ${locked?'disabled':''} onchange="toggleCompNotPlayed('${c.replace(/'/g,"\\'")}', this.checked)">
+          No se disputa esta temporada
+        </label>
       </div>
     </div>`;
   }).join('') + `
@@ -1413,6 +1456,21 @@ function renderObjectivesByComp(competitions){
       }
     });
   }
+}
+
+// Marca/desmarca una competencia como "no se disputa esta temporada" (por ejemplo, un club
+// que este año no clasificó a la copa internacional que sí tiene disponible en su liga). Se
+// aplica al toque, sin esperar a "Guardar perfil", para que quede reflejado ya mismo en el
+// desplegable de "Agregar partido" del Calendario y en el cierre de temporada.
+function toggleCompNotPlayed(comp, checked){
+  if(!state.profile.competitionNotPlayed) state.profile.competitionNotPlayed = {};
+  state.profile.competitionNotPlayed[comp] = checked;
+  const leagueName = leagueSelect.value;
+  if(leagueName && leagueName !== '__custom__' && LEAGUE_DB[leagueName]){
+    renderObjectivesByComp(LEAGUE_DB[leagueName].competitions);
+  }
+  populateMatchCompOptions();
+  renderCloseSeasonRows();
 }
 
 function updateClubOptions(){
@@ -1485,7 +1543,7 @@ function renderOnboardingChecklist(){
   }
   const items = [
     { ok: !!(state.profile.name && state.profile.club), label: 'Nombre del técnico y club definidos' },
-    { ok: state.players.length >= 16 && state.players.length <= 30, label: `Plantel entre 16 y 30 jugadores (llevás ${state.players.length})` },
+    { ok: state.players.length >= 16 && state.players.length <= 50, label: `Plantel entre 16 y 50 jugadores (llevás ${state.players.length})` },
     { ok: state.matches.length >= 6, label: `Calendario con al menos 6 próximos partidos (llevás ${state.matches.length})` },
   ];
   box.innerHTML = `
@@ -2126,8 +2184,8 @@ document.getElementById('addPlayer').addEventListener('click', () => {
   const pos = document.getElementById('pPos').value;
   const tier = document.getElementById('pTier').value;
   if(!name) return;
-  if(state.players.length >= 30){
-    alert('El plantel ya tiene el máximo de 30 jugadores.');
+  if(state.players.length >= 50){
+    alert('El plantel ya tiene el máximo de 50 jugadores.');
     return;
   }
   state.players.push({ id: nextId++, name, pos, tier, status:'Disponible' });
@@ -2200,8 +2258,10 @@ function removePlayer(id){
   document.getElementById('removePlayerModal').style.display = 'flex';
 }
 document.getElementById('removeReason').addEventListener('change', () => {
-  const isSale = document.getElementById('removeReason').value === 'venta';
-  document.getElementById('removeSaleFields').style.display = isSale ? 'block' : 'none';
+  const reason = document.getElementById('removeReason').value;
+  const showFields = reason === 'venta' || reason === 'prestamo';
+  document.getElementById('removeSaleFields').style.display = showFields ? 'block' : 'none';
+  document.getElementById('removeSaleAmountLabel').textContent = reason === 'prestamo' ? 'Monto del préstamo (si aplica)' : 'Monto de la venta';
 });
 document.getElementById('removeCancelBtn').addEventListener('click', () => {
   pendingRemovePlayerId = null;
@@ -2221,6 +2281,15 @@ document.getElementById('removeConfirmBtn').addEventListener('click', () => {
   } else if(reason === 'fin_contrato'){
     body = `Venció el contrato de ${p.name} y no se le renovó. Deja el club como agente libre.`;
     adjustStat('fanRelation', -Math.round(2*tierMult));
+  } else if(reason === 'liberado'){
+    body = `${club} decidió rescindirle el contrato a ${p.name} antes de tiempo y lo liberó.`;
+    adjustStat('fanRelation', -Math.round(3*tierMult));
+    adjustStat('playerRelation', -Math.round(2*tierMult));
+  } else if(reason === 'prestamo'){
+    const amount = document.getElementById('removeSaleAmount').value.trim();
+    const destClub = document.getElementById('removeSaleClub').value.trim();
+    body = `${p.name} se va a préstamo${destClub ? ' a '+destClub : ''}${amount ? ' por '+amount : ''}. Sigue perteneciendo a ${club}, pero no está disponible mientras dure la cesión.`;
+    adjustStat('fanRelation', -Math.round(1*tierMult));
   } else {
     const amount = document.getElementById('removeSaleAmount').value.trim();
     const destClub = document.getElementById('removeSaleClub').value.trim();
@@ -2243,8 +2312,11 @@ document.getElementById('removeConfirmBtn').addEventListener('click', () => {
 function populateMatchCompOptions(){
   const compSelect = document.getElementById('mComp');
   const compText = document.getElementById('mCompText');
-  const comps = state.profile.competitions && state.profile.competitions.length ? state.profile.competitions : null;
-  if(comps){
+  const notPlayed = state.profile.competitionNotPlayed || {};
+  const comps = state.profile.competitions && state.profile.competitions.length
+    ? state.profile.competitions.filter(c => !notPlayed[c])
+    : null;
+  if(comps && comps.length){
     compSelect.style.display = 'block';
     compText.style.display = 'none';
     compSelect.innerHTML = comps.map(c => `<option value="${c}">${c}</option>`).join('');
@@ -2378,6 +2450,7 @@ function loadMatchIntoZone(id){
   activeMatchId = id;
   const m = state.matches.find(x=>x.id===id);
   if(!m) return;
+  checkPreMatchConference(m);
   document.getElementById('scoreClubLabel').textContent = state.profile.club || 'Club';
   document.getElementById('scoreRivalLabel').textContent = m.rival;
 
@@ -2407,6 +2480,7 @@ function loadMatchIntoZone(id){
     document.getElementById('matchNote').value='';
   }
   document.getElementById('matchResultForm').style.display = m.event ? 'block' : 'none';
+  document.getElementById('saveResult').textContent = m.result ? 'Corregir resultado' : 'Guardar resultado';
 }
 
 function mountZone(targetId){
@@ -2457,14 +2531,40 @@ document.getElementById('backBtn').addEventListener('click', () => {
 document.getElementById('saveResult').addEventListener('click', () => {
   const m = state.matches.find(x=>x.id===activeMatchId);
   if(!m) return;
+  // Si el partido YA tenía un resultado cargado, esto es una CORRECCIÓN: hay que deshacer el
+  // impacto numérico del resultado viejo antes de aplicar el nuevo. Lo que sí NO se debe repetir
+  // son las cosas que solo deben pasar una vez por partido (lesiones que cuentan partidos,
+  // eventos futuros que cuentan cuenta regresiva, la conferencia de prensa, etc.).
+  const isEdit = !!m.result;
+  const oldResult = isEdit ? { ...m.result } : null;
+  const info = m.importance ? importanceInfo(m.comp, m.importance) : null;
+  const mult = info ? info.mult : 1;
+
+  if(isEdit){
+    const oldGoalDiff = oldResult.home - oldResult.away;
+    const oldEffects = goalDiffEffects(oldGoalDiff);
+    Object.entries(oldEffects).forEach(([stat, val]) => { if(val !== 0) adjustStatRaw(stat, -val * mult); });
+    if(oldResult.home > oldResult.away){
+      state.stintStats.won = Math.max(0, state.stintStats.won - 1);
+      state.stintStats.played = Math.max(0, state.stintStats.played - 1);
+      state.reputation -= Math.round(3*mult);
+    } else if(oldResult.home < oldResult.away){
+      state.stintStats.lost = Math.max(0, state.stintStats.lost - 1);
+      state.stintStats.played = Math.max(0, state.stintStats.played - 1);
+      state.reputation += Math.round(3*mult);
+      state.consecutiveLosses = Math.max(0, (state.consecutiveLosses||0) - 1);
+    } else {
+      state.stintStats.drawn = Math.max(0, state.stintStats.drawn - 1);
+      state.stintStats.played = Math.max(0, state.stintStats.played - 1);
+    }
+  }
+
   state._suppressExtremeChecks = true;
   const home = parseInt(document.getElementById('scoreHome').value) || 0;
   const away = parseInt(document.getElementById('scoreAway').value) || 0;
   const scorersNames = currentScorers.slice();
   m.result = { home, away, scorers: scorersNames.join(', '), note: document.getElementById('matchNote').value.trim() };
   m.status = 'jugado';
-  const info = m.importance ? importanceInfo(m.comp, m.importance) : null;
-  const mult = info ? info.mult : 1;
   const isBigMatch = mult >= 1.6;
   const goalDiff = home - away;
   const baseEffects = goalDiffEffects(goalDiff);
@@ -2478,7 +2578,7 @@ document.getElementById('saveResult').addEventListener('click', () => {
     state.stintStats.played += 1;
     state.stintStats.won += 1;
     state.reputation += Math.round(3*mult);
-    if(isBigMatch){
+    if(isBigMatch && !isEdit){
       state.eventHistory.unshift({
         matchId: m.id, rival: m.rival, date: m.date,
         tag: (info.label || '').toUpperCase(), title: `¡Victoria en ${info.label} frente a ${m.rival}!`,
@@ -2490,14 +2590,14 @@ document.getElementById('saveResult').addEventListener('click', () => {
     state.stintStats.played += 1;
     state.stintStats.lost += 1;
     state.reputation -= Math.round(3*mult);
-    if(isBigMatch){
+    if(isBigMatch && !isEdit){
       state.eventHistory.unshift({
         matchId: m.id, rival: m.rival, date: m.date,
         tag: (info.label || '').toUpperCase(), title: `Dura derrota en ${info.label} ante ${m.rival}`,
         body: `Perder un partido de esta magnitud pega fuerte: se resiente el vestuario, la dirigencia y la afición.`
       });
     }
-    if(state.stats.fanRelation <= 45){
+    if(!isEdit && state.stats.fanRelation <= 45){
       state.eventHistory.unshift({
         matchId: m.id, rival: m.rival, date: m.date,
         tag:'HINCHADA', title:'La hinchada te silba en la cancha',
@@ -2510,15 +2610,26 @@ document.getElementById('saveResult').addEventListener('click', () => {
     state.stintStats.drawn += 1;
   }
 
-  tickAvailability();
-  if(state.coachStability.cooldown > 0) state.coachStability.cooldown -= 1;
-  (state.pendingFutureEvents || []).forEach(f => f.matchesRemaining -= 1);
-  checkPressLeak();
-  addTimelineEntry(m);
+  if(!isEdit){
+    tickAvailability();
+    if(state.coachStability.cooldown > 0) state.coachStability.cooldown -= 1;
+    (state.pendingFutureEvents || []).forEach(f => f.matchesRemaining -= 1);
+    checkPressLeak();
+    addTimelineEntry(m);
+  }
   renderEventHistory();
   renderProfile();
   renderPlayers();
-  showPressConference(m);
+  if(isEdit){
+    state._suppressExtremeChecks = false;
+    checkExtremeStates();
+    alert('Resultado corregido correctamente.');
+    closeMatchView();
+    switchTab('calendario');
+    renderMatches();
+  } else {
+    showPressConference(m);
+  }
 });
 
 function checkPressLeak(){
@@ -2588,11 +2699,20 @@ function renderTimeline(){
 
 // ------------------ CONFERENCIA DE PRENSA ------------------
 function getNextMatch(currentMatchId){
+  // Bug real: antes esto solo buscaba partidos pendientes DESPUÉS del actual en el array. Si el
+  // usuario cargaba partidos fuera de orden (por ejemplo, agregaba un amistoso para más adelante
+  // antes de terminar de cargar el resto del calendario), un partido pendiente que quedaba
+  // ubicado ANTES en la lista nunca se detectaba como "próximo", y la conferencia de prensa
+  // post-partido se armaba como si no hubiera ningún partido cargado. Ahora se busca en TODO
+  // el calendario, no solo hacia adelante en el array.
   const idx = state.matches.findIndex(x=>x.id===currentMatchId);
   for(let i=idx+1; i<state.matches.length; i++){
     if(state.matches[i].status === 'pendiente') return state.matches[i];
   }
-  return null;
+  for(let i=0; i<idx; i++){
+    if(state.matches[i].status === 'pendiente') return state.matches[i];
+  }
+  return state.matches.find(x => x.id !== currentMatchId && x.status === 'pendiente') || null;
 }
 
 // ------------------ RESPUESTAS REALES DE PRENSA (banco extenso y aleatorio) ------------------
@@ -2687,15 +2807,60 @@ const RESULT_DELTAS = {
   loss: { PICANTE:{dPersonality:+8,dClub:-6,dFan:+4,dPress:-8,dMood:-6}, TRANQUILO:{dPersonality:-6,dClub:+5,dFan:-1,dPress:+8,dMood:+4}, EVASIVO:{dPersonality:-2,dClub:+1,dFan:0,dPress:-3,dMood:+1} },
   draw: { PICANTE:{dPersonality:+7,dClub:-3,dFan:+3,dPress:-6,dMood:-3}, TRANQUILO:{dPersonality:-5,dClub:+3,dFan:-1,dPress:+6,dMood:+5}, EVASIVO:{dPersonality:-2,dClub:+1,dFan:0,dPress:-2,dMood:+1} },
 };
-function resultQuestionText(rival, r){
+
+// Preguntas más directas y "picantes" para clásicos, superclásicos, finales y demás partidos
+// de máxima exigencia (mult >= 1.6): ahí te jugás mucho más, así que la prensa no te deja pasar
+// una. Se usan EN VEZ de las preguntas normales de resultado cuando el partido es de ese peso.
+const BIG_MATCH_QUESTIONS = {
+  win: [
+    (r,s)=>`Ganarle ${s} a ${r} en un partido de máxima exigencia. ¿Es la prueba de que este equipo está para todo?`,
+    (r,s)=>`Se lo jugaban entero contra ${r}, y lo ganaron ${s}. ¿Qué significa esta victoria para el proyecto?`,
+    (r,s)=>`${s} en un partido de este peso. ¿Esta era la revancha que buscaba?`,
+  ],
+  loss: [
+    (r,s)=>`Perder ${s} un partido de esta magnitud frente a ${r}. ¿Cuánto duele en serio?`,
+    (r,s)=>`Se lo jugaban entero y cayeron ${s} ante ${r}. ¿Es un golpe del que se recuperan?`,
+    (r,s)=>`${s} en contra en un partido de máxima exigencia. ¿Su continuidad puede verse afectada por esto?`,
+  ],
+  draw: [
+    (r,s)=>`Un empate ${s} en un partido de esta magnitud frente a ${r}. ¿Sabe a poco o a mucho?`,
+    (r,s)=>`En un partido que se jugaban entero, terminó ${s} con ${r}. ¿Conforme o no?`,
+  ],
+};
+const BIG_MATCH_ANSWERS = {
+  win: {
+    PICANTE: [ (r)=>`"Le ganamos a ${r} en su cara. Esto recién empieza."`, (r)=>`"Nos jugábamos todo y respondimos. Que hablen ahora."` ],
+    TRANQUILO: [ (r)=>`"Es una alegría enorme, pero mañana hay que seguir trabajando igual."`, (r)=>`"Ganamos con mucho esfuerzo, se lo merece el plantel entero."` ],
+    EVASIVO: [ ()=>`"Prefiero disfrutarlo puertas adentro antes que hablar de más."` ],
+  },
+  loss: {
+    PICANTE: [ (r)=>`"Nadie se murió acá. Al que le guste ver sangre, que la busque en otro lado."`, ()=>`"Me hago cargo, pero no voy a permitir que me busquen la cabeza por un partido."` ],
+    TRANQUILO: [ (r)=>`"Duele, y no lo voy a esconder. Pero hay que seguir sosteniendo el proceso."`, ()=>`"Es un golpe duro, pero no cambia el plan de trabajo."` ],
+    EVASIVO: [ ()=>`"Prefiero analizarlo puertas adentro antes de sacar conclusiones apresuradas."` ],
+  },
+  draw: {
+    PICANTE: [ ()=>`"En partidos así, un empate a veces vale como una victoria. No tengo nada que reprocharle al equipo."` ],
+    TRANQUILO: [ ()=>`"Ante la magnitud del partido, es un resultado que se puede sostener."` ],
+    EVASIVO: [ ()=>`"Prefiero no hacer una gran evaluación por un solo resultado."` ],
+  },
+};
+const BIG_MATCH_DELTAS = {
+  win:  { PICANTE:{dPersonality:+11,dClub:-3,dFan:+11,dPress:-10,dMood:-4}, TRANQUILO:{dPersonality:-6,dClub:+8,dFan:+4,dPress:+10,dMood:+8}, EVASIVO:{dPersonality:-2,dClub:+2,dFan:0,dPress:-4,dMood:+1} },
+  loss: { PICANTE:{dPersonality:+11,dClub:-11,dFan:+3,dPress:-11,dMood:-8}, TRANQUILO:{dPersonality:-7,dClub:+7,dFan:-3,dPress:+9,dMood:+3}, EVASIVO:{dPersonality:-3,dClub:+1,dFan:-1,dPress:-4,dMood:+1} },
+  draw: { PICANTE:{dPersonality:+9,dClub:-6,dFan:+4,dPress:-8,dMood:-3}, TRANQUILO:{dPersonality:-6,dClub:+5,dFan:-2,dPress:+8,dMood:+4}, EVASIVO:{dPersonality:-2,dClub:+1,dFan:-1,dPress:-3,dMood:+1} },
+};
+function resultQuestionText(rival, r, isBigMatch){
   const outcome = state._resultOutcome;
   const scoreLine = `${r.home}-${r.away}`;
-  return pick(RESULT_QUESTIONS[outcome])(rival, scoreLine);
+  const bank = isBigMatch ? BIG_MATCH_QUESTIONS : RESULT_QUESTIONS;
+  return pick(bank[outcome])(rival, scoreLine);
 }
-function resultQuoteOptions(rival){
+function resultQuoteOptions(rival, isBigMatch){
   const outcome = state._resultOutcome;
+  const answersBank = isBigMatch ? BIG_MATCH_ANSWERS[outcome] : RESULT_ANSWERS[outcome];
+  const deltasBank = isBigMatch ? BIG_MATCH_DELTAS[outcome] : RESULT_DELTAS[outcome];
   return ['PICANTE','TRANQUILO','EVASIVO'].map(tag => ({
-    tag, label: pick(RESULT_ANSWERS[outcome][tag])(rival), ...RESULT_DELTAS[outcome][tag]
+    tag, label: pick(answersBank[tag])(rival), ...deltasBank[tag]
   }));
 }
 
@@ -2727,11 +2892,62 @@ function eventImpactQuoteOptions(name){
   return ['PICANTE','TRANQUILO','EVASIVO'].map(tag => ({ tag, label: pick(EVENT_IMPACT_ANSWERS[tag])(name), ...EVENT_IMPACT_DELTAS[tag] }));
 }
 
+// Para eventos SIN jugador puntual (institucionales, de club, logística): no tiene sentido
+// preguntar por "el jugador involucrado" porque no lo hay. Fraseo genérico, sin nombres.
+const EVENT_IMPACT_NOPLAYER_QUESTIONS = [
+  (t)=>`Esta semana pasó esto en el club: "${t}". ¿Cómo lo vivieron puertas adentro?`,
+  (t)=>`Trascendió lo siguiente: "${t}". ¿Qué puede contarnos al respecto?`,
+  (t)=>`Se supo que "${t}". ¿Le restó foco al plantel de cara al partido?`,
+  (t)=>`¿Puede ampliar un poco sobre esto: "${t}"?`,
+];
+const EVENT_IMPACT_NOPLAYER_ANSWERS = {
+  PICANTE: [
+    ()=>`"Eso es un tema interno del club, no le debo explicaciones a la prensa."`,
+    ()=>`"Me molesta que se filtren estas cosas puertas adentro."`,
+  ],
+  TRANQUILO: [
+    ()=>`"Ya está resuelto y el foco sigue puesto en el equipo."`,
+    ()=>`"Son cosas que pasan en el día a día de un club, no nos afectó."`,
+  ],
+  EVASIVO: [
+    ()=>`"Prefiero no entrar en detalles sobre eso en conferencia."`,
+    ()=>`"No tengo nada para agregar sobre ese tema."`,
+  ],
+};
+const EVENT_IMPACT_NOPLAYER_DELTAS = { PICANTE:{dPersonality:+6,dClub:-3,dFan:+1,dPress:-7,dMood:0}, TRANQUILO:{dPersonality:-4,dClub:+4,dFan:0,dPress:+5,dMood:0}, EVASIVO:{dPersonality:-1,dClub:+1,dFan:0,dPress:-3,dMood:0} };
+function eventImpactNoPlayerQuoteOptions(){
+  return ['PICANTE','TRANQUILO','EVASIVO'].map(tag => ({ tag, label: pick(EVENT_IMPACT_NOPLAYER_ANSWERS[tag])(), ...EVENT_IMPACT_NOPLAYER_DELTAS[tag] }));
+}
+
+// Para eventos POSITIVOS (nacimiento, boda): la prensa felicita, no pregunta por un conflicto.
+const EVENT_IMPACT_POSITIVE_QUESTIONS = [
+  (t)=>`Se conoció una linda noticia esta semana: "${t}". ¿Quiere mandarle un saludo desde acá?`,
+  (t)=>`Circuló la novedad de que "${t}". ¿Cómo lo vivió el plantel?`,
+];
+const EVENT_IMPACT_POSITIVE_ANSWERS = {
+  PICANTE: [
+    (n)=>`"Ojalá la prensa se enfoque más seguido en cosas lindas como esta, y no solo en buscar problemas."`,
+  ],
+  TRANQUILO: [
+    (n)=>`"Una alegría enorme para ${n} y para todo el plantel, que lo acompaña de cerca."`,
+  ],
+  EVASIVO: [
+    ()=>`"Son temas personales, prefiero que la familia lo viva en la intimidad."`,
+  ],
+};
+const EVENT_IMPACT_POSITIVE_DELTAS = { PICANTE:{dPersonality:+2,dClub:0,dFan:+1,dPress:-3,dMood:+2}, TRANQUILO:{dPersonality:-1,dClub:+2,dFan:+3,dPress:+4,dMood:+6}, EVASIVO:{dPersonality:0,dClub:+1,dFan:0,dPress:-1,dMood:0} };
+function eventImpactPositiveQuoteOptions(name){
+  return ['PICANTE','TRANQUILO','EVASIVO'].map(tag => ({ tag, label: pick(EVENT_IMPACT_POSITIVE_ANSWERS[tag])(name), ...EVENT_IMPACT_POSITIVE_DELTAS[tag] }));
+}
+
 const FAN_PATIENCE_QUESTIONS = [
   ()=>`Tras esta derrota, ¿qué le diría a una hinchada que empieza a impacientarse?`,
   ()=>`Los hinchas ya reclaman en las redes. ¿Qué mensaje les da?`,
   ()=>`¿Entiende el malestar de la gente después de este resultado?`,
   ()=>`Se empiezan a escuchar críticas de la tribuna. ¿Cómo lo toma?`,
+  ()=>`Algunos socios piden una reunión urgente con la dirigencia. ¿Qué opina?`,
+  ()=>`En la última fecha hubo cánticos en contra suyo. ¿Le preocupa?`,
+  ()=>`¿Cree que la hinchada todavía confía en este proyecto?`,
 ];
 const FAN_PATIENCE_ANSWERS = {
   PICANTE: [
@@ -2811,6 +3027,8 @@ const SEASON_GOAL_QUESTIONS = [
   (g)=>`¿Este triunfo cambia algo respecto al objetivo de la temporada: ${g}?`,
   (g)=>`Con este nivel, ¿se anima a pedir más de lo planteado como objetivo (${g})?`,
   (g)=>`¿Este resultado los acerca al objetivo marcado: ${g}?`,
+  (g)=>`Faltan varias fechas todavía. ¿Sigue sintiéndose cómodo con el objetivo (${g})?`,
+  (g)=>`¿La dirigencia le transmitió conformidad con el rumbo hacia el objetivo (${g})?`,
 ];
 const SEASON_GOAL_ANSWERS = {
   PICANTE: [
@@ -2831,10 +3049,39 @@ function seasonGoalQuoteOptions(){
   return ['PICANTE','TRANQUILO','EVASIVO'].map(tag => ({ tag, label: pick(SEASON_GOAL_ANSWERS[tag])(), ...SEASON_GOAL_DELTAS[tag] }));
 }
 
+// Alternativa a la pregunta de objetivos cuando se gana, para no repetir siempre el mismo tipo
+// de pregunta en cada victoria (antes se agregaba SEASON_GOAL sin ninguna variación posible).
+const WIN_CONFIDENCE_QUESTIONS = [
+  ()=>`El equipo lleva un presente muy sólido. ¿Se anima a decir que están para pelear arriba?`,
+  ()=>`¿Nota un cambio de mentalidad en el plantel después de resultados así?`,
+  ()=>`¿A qué atribuye esta seguidilla de buenos resultados?`,
+  ()=>`¿El vestuario ya se siente protagonista del torneo?`,
+];
+const WIN_CONFIDENCE_ANSWERS = {
+  PICANTE: [
+    ()=>`"Venimos para pelear todo, y no le tengo miedo a decirlo en voz alta."`,
+    ()=>`"El equipo cambió la cara, y esto recién empieza."`,
+  ],
+  TRANQUILO: [
+    ()=>`"Es el fruto del trabajo diario, pero no nos relajamos ni un poco."`,
+    ()=>`"Prefiero ir paso a paso, sin ponerle techo pero sin volarnos."`,
+  ],
+  EVASIVO: [
+    ()=>`"Prefiero no hablar de rachas, cada partido es distinto."`,
+    ()=>`"Vamos partido a partido, no me gusta anticiparme."`,
+  ],
+};
+const WIN_CONFIDENCE_DELTAS = { PICANTE:{dPersonality:+7,dClub:-1,dFan:+7,dPress:-3,dMood:0}, TRANQUILO:{dPersonality:-3,dClub:+4,dFan:+3,dPress:+5,dMood:0}, EVASIVO:{dPersonality:-1,dClub:+1,dFan:0,dPress:-1,dMood:0} };
+function winConfidenceQuoteOptions(){
+  return ['PICANTE','TRANQUILO','EVASIVO'].map(tag => ({ tag, label: pick(WIN_CONFIDENCE_ANSWERS[tag])(), ...WIN_CONFIDENCE_DELTAS[tag] }));
+}
+
 const RIVAL_PREVIEW_QUESTIONS = [
   (r,c)=>`Mirando lo que viene, ¿qué opina de ${r} de cara a este cruce en ${c}?`,
   (r)=>`¿Cómo se prepara el equipo para enfrentar a ${r}?`,
   (r)=>`¿Qué representa para usted un partido frente a ${r}?`,
+  (r)=>`¿Cuál es la clave táctica para superar a ${r}?`,
+  (r)=>`¿Hay algún jugador de ${r} que le preocupe en particular?`,
 ];
 const RIVAL_PREVIEW_ANSWERS = {
   CRÍTICO: [
@@ -2859,6 +3106,8 @@ const CLUB_PRESSURE_QUESTIONS = [
   ()=>`Se habla de que la dirigencia está evaluando su continuidad. ¿Qué opina?`,
   ()=>`¿Siente que su puesto está en riesgo con estos resultados?`,
   ()=>`Trascendió cierto malestar del presidente con su gestión. ¿Cómo lo toma?`,
+  ()=>`Hay rumores de un posible reemplazante ya contactado. ¿Le consta algo?`,
+  ()=>`¿Pidió explícitamente el respaldo de la dirigencia esta semana?`,
 ];
 const CLUB_PRESSURE_ANSWERS = {
   PICANTE: [
@@ -2883,6 +3132,8 @@ const STANDOUT_QUESTIONS = [
   (n)=>`${n} tuvo un partidazo. ¿Qué destaca de su nivel?`,
   (n)=>`¿Cómo explica el gran presente de ${n}?`,
   (n)=>`¿Hay chances de que ${n} sea convocado a la selección con este nivel?`,
+  (n)=>`¿Teme que algún grande se lleve a ${n} tras este nivel?`,
+  (n)=>`¿Qué trabajo particular hicieron con ${n} para llegar a este nivel?`,
 ];
 const STANDOUT_ANSWERS = {
   PICANTE: [ (n)=>`"${n} está para jugar en cualquier lado, y lo vengo diciendo hace rato."` ],
@@ -2897,6 +3148,8 @@ function standoutQuoteOptions(name){
 const TRANSFER_RUMOR_QUESTIONS = [
   (n)=>`Circula un rumor de mercado sobre ${n}. ¿Puede confirmarlo o desmentirlo?`,
   (n)=>`¿${n} sigue en sus planes o podría salir en el próximo mercado?`,
+  (n)=>`Un club europeo habría preguntado por ${n}. ¿Qué puede decirnos?`,
+  (n)=>`¿La dirigencia le consultó sobre una posible salida de ${n}?`,
 ];
 const TRANSFER_RUMOR_ANSWERS = {
   PICANTE: [ (n)=>`"Estos rumores sobre ${n} los inventan ustedes, la prensa, para generar ruido."` ],
@@ -2918,6 +3171,8 @@ function showPressConference(playedMatch){
   const r = playedMatch.result;
   state._resultOutcome = r.home > r.away ? 'win' : (r.home < r.away ? 'loss' : 'draw');
   const nextMatch = getNextMatch(playedMatch.id);
+  const infoPlayed = playedMatch.importance ? importanceInfo(playedMatch.comp, playedMatch.importance) : null;
+  const wasBigMatch = infoPlayed && infoPlayed.mult >= 1.6;
 
   document.getElementById('pressIntro').textContent = nextMatch
     ? `Previa de ${club} vs ${nextMatch.rival} (${nextMatch.comp || 'próximo compromiso'}, ${nextMatch.date || 'fecha a confirmar'}).`
@@ -2926,18 +3181,31 @@ function showPressConference(playedMatch){
   // Banco de preguntas elegibles según el contexto; se arma la conferencia con una selección
   // aleatoria para que no se repita siempre el mismo orden ni las mismas preguntas.
   const pool = [];
-  pool.push({ text: resultQuestionText(playedMatch.rival, r), playerId:null, options: resultQuoteOptions(playedMatch.rival) });
+  pool.push({ text: resultQuestionText(playedMatch.rival, r, wasBigMatch), playerId:null, options: resultQuoteOptions(playedMatch.rival, wasBigMatch) });
 
   if(playedMatch.event && playedMatch.event.tag !== 'SIN NOVEDAD'){
-    const pid = playedMatch.event.playerId || null;
-    const evName = playedMatch.event.playerName || 'el jugador involucrado';
-    pool.push({ text: pick(EVENT_IMPACT_QUESTIONS)(playedMatch.event.title(playedMatch.event.playerName)), playerId: pid, options: eventImpactQuoteOptions(evName).map(o=>({...o, playerId:pid})) });
+    const ev = playedMatch.event;
+    const pid = ev.playerId || null;
+    const evTitle = ev.title(ev.playerName);
+    if(ev.positive){
+      const evName = ev.playerName || 'el plantel';
+      pool.push({ text: pick(EVENT_IMPACT_POSITIVE_QUESTIONS)(evTitle), playerId: pid, options: eventImpactPositiveQuoteOptions(evName).map(o=>({...o, playerId:pid})) });
+    } else if(!pid){
+      pool.push({ text: pick(EVENT_IMPACT_NOPLAYER_QUESTIONS)(evTitle), playerId: null, options: eventImpactNoPlayerQuoteOptions() });
+    } else {
+      const evName = ev.playerName || 'el jugador involucrado';
+      pool.push({ text: pick(EVENT_IMPACT_QUESTIONS)(evTitle), playerId: pid, options: eventImpactQuoteOptions(evName).map(o=>({...o, playerId:pid})) });
+    }
   }
 
   if(r.home < r.away){
     pool.push({ text: pick(FAN_PATIENCE_QUESTIONS)(), playerId:null, options: fanPatienceQuoteOptions() });
   } else if(r.home > r.away){
-    pool.push({ text: pick(SEASON_GOAL_QUESTIONS)(state.profile.goal || 'los objetivos planteados'), playerId:null, options: seasonGoalQuoteOptions() });
+    if(Math.random() < 0.5){
+      pool.push({ text: pick(SEASON_GOAL_QUESTIONS)(state.profile.goal || 'los objetivos planteados'), playerId:null, options: seasonGoalQuoteOptions() });
+    } else {
+      pool.push({ text: pick(WIN_CONFIDENCE_QUESTIONS)(), playerId:null, options: winConfidenceQuoteOptions() });
+    }
   }
 
   if(nextMatch){
@@ -2981,6 +3249,8 @@ function showPressConference(playedMatch){
 
   state.currentPress = { questions, answered: new Array(questions.length).fill(false) };
   document.getElementById('continueBtn').disabled = true;
+  // El botón decía siempre "Ir al próximo partido", aunque no hubiera ninguno cargado todavía.
+  document.getElementById('continueBtn').textContent = nextMatch ? 'Ir al próximo partido' : 'Volver al calendario';
   renderPressQuestions();
 }
 
@@ -3092,9 +3362,6 @@ const TEMPLATES = {
     { id:'permiso_ausencia', tag:'PEDIDO PERSONAL', tagClass:'', needsPlayer:true, decision:'permiso',
       title:(n)=> `${n} pide permiso para faltar al próximo partido`,
       body:(club,n)=> `${n} se acercó a pedirte autorización para faltar al próximo partido por un tema personal.` },
-    { id:'dt_ausente', tag:'BANCO', tagClass:'', decision:'dt_ausente',
-      title:()=> 'El técnico no puede estar en el banco',
-      body:(club)=> `Una sanción administrativa leve te deja afuera del banco de suplentes; tu ayudante dirige el próximo partido.` },
     { id:'roce_entrenamiento', tag:'VESTUARIO', tagClass:'', needsPlayer:2, decision:'roce_entrenamiento',
       title:()=> 'Roce menor en el entrenamiento',
       body:(club,n)=> `Un cruce verbal entre ${n} en la práctica empieza a subir de tono.` },
@@ -3146,12 +3413,15 @@ const TEMPLATES = {
     { id:'bev_multa_transito', tag:'LOGÍSTICA', tagClass:'', needsPlayer:true, decision:'bev_multa_transito',
       title:(n)=> `Problema de tránsito de ${n}`,
       body:(club,n)=> `${n} recibió una multa de tránsito y tuvo que resolver una cuestión administrativa que le demandó buena parte del día.` },
-    { id:'bev_nacimiento', tag:'VIDA PERSONAL', tagClass:'gold', needsPlayer:true, matchesOut:[1,1],
+    { id:'bev_nacimiento', tag:'VIDA PERSONAL', tagClass:'gold', needsPlayer:true, matchesOut:[1,1], positive:true,
       title:(n)=> `${n} acaba de ser padre`,
       body:(club,n)=> `¡Buenas noticias! ${n} acaba de tener un hijo y se ausenta del próximo partido para acompañar a su familia.` },
     { id:'secta_vestuario', tag:'ANÉCDOTA', tagClass:'', needsPlayer:true, decision:'secta_vestuario',
       title:(n)=> `${n} organiza rituales "espirituales" en el vestuario`,
       body:(club,n)=> `${n} empezó a organizar sesiones de meditación con rituales bastante particulares antes de los entrenamientos, y ya sumó varios seguidores en el plantel.` },
+    { id:'advertencia_financiera', tag:'DIRIGENCIA', tagClass:'', financeSeverity:'leve',
+      title:()=> 'Advertencia financiera de la dirigencia',
+      body:(club)=> `La dirigencia de ${club} te pide cautela con los gastos del próximo mercado. Nada grave todavía, pero te lo dejan por escrito.` },
     { id:'incendio_asado', tag:'ANÉCDOTA', tagClass:'', needsPlayer:true, decision:'incendio_asado',
       title:(n)=> `${n} prende fuego su propia casa haciendo un asado`,
       body:(club,n)=> `Un asado que se le fue de las manos a ${n} terminó incendiando parte de su casa. Por suerte no hubo heridos, pero se quedó sin lugar donde vivir por un tiempo.` },
@@ -3169,6 +3439,13 @@ const TEMPLATES = {
     { id:'lesion_leve', tag:'PARTE MÉDICO', tagClass:'gold', needsPlayer:true, matchesOut:[1,3], decision:'minutes',
       title:(n)=> `Lesión leve de ${n}`,
       body:(club,n)=> `${n} sufrió una lesión leve. El cuerpo médico estima algunas semanas afuera de las canchas.` },
+    // Escalada de hostigamiento de la hinchada cuando la relación con la afición ya está mal:
+    // primero algo menor (pinchan las gomas del auto), después algo más agresivo (grafitis),
+    // y recién en estado crítico (más abajo, tier "critica") se presentan directamente en tu casa.
+    { id:'gomas_pinchadas', tag:'HINCHADA', tagClass:'alert', decision:'gomas_pinchadas',
+      requires: () => state.stats.fanRelation <= 45,
+      title:()=> 'Te pinchan las gomas del auto',
+      body:(club)=> `Encontraste las cuatro gomas de tu auto pinchadas en el estacionamiento del predio de ${club}. Un grupo de hinchas descontentos se atribuyó el hecho en redes.` },
     { id:'pelea_vestuario', tag:'VESTUARIO', tagClass:'alert', needsPlayer:2, decision:'sancion',
       title:(n)=> `Pelea entre ${n}`,
       body:(club,n)=> `${n} protagonizaron un cruce fuerte en el vestuario que llegó a las manos.` },
@@ -3238,7 +3515,7 @@ const TEMPLATES = {
     { id:'bevc21', tag:'DISCIPLINA', tagClass:'gold', needsPlayer:true, decision:'bevc21',
       title:(n)=> `${n} se niega a entrenar`,
       body:(club,n)=> `${n} se niega a entrenar porque considera que está jugando demasiado poco.` },
-    { id:'bev_boda', tag:'VIDA PERSONAL', tagClass:'gold', needsPlayer:true, matchesOut:[1,1],
+    { id:'bev_boda', tag:'VIDA PERSONAL', tagClass:'gold', needsPlayer:true, matchesOut:[1,1], positive:true,
       title:(n)=> `${n} pide permiso para una boda familiar`,
       body:(club,n)=> `${n} te avisa que debe asistir a una boda familiar impostergable y no va a estar disponible para el próximo partido.` },
     { id:'bev_dormido', tag:'DISCIPLINA', tagClass:'gold', needsPlayer:true, matchesOut:[1,1],
@@ -3253,12 +3530,12 @@ const TEMPLATES = {
     { id:'capitan_reemplazado_molesto', tag:'VESTUARIO', tagClass:'gold', needsPlayer:true, schedulesFuture:{templateId:'capitan_explota', delay:3},
       title:(n)=> `${n} se va molesto tras ser reemplazado`,
       body:(club,n)=> `Notaste que ${n} se fue visiblemente enojado al banco después de ser reemplazado. Por ahora no dice nada, pero algo quedó pendiente.` },
-    { id:'boda_relampago', tag:'ANÉCDOTA', tagClass:'gold', needsPlayer:true, decision:'boda_relampago',
+    { id:'boda_relampago', tag:'ANÉCDOTA', tagClass:'gold', needsPlayer:true, decision:'boda_relampago', positive:true,
       title:(n)=> `${n} se casó de sorpresa`,
       body:(club,n)=> `${n} se casó de improviso con alguien que conoció hace apenas una semana, en una ceremonia relámpago que sorprendió a todo el plantel.` },
     { id:'reality_show', tag:'REDES SOCIALES', tagClass:'gold', needsPlayer:true, decision:'reality_show',
       title:(n)=> `${n} se anota en un reality show`,
-      body:(club,n)=> `${n} confirmó, sin avisarte antes, que va a participar de un reality show de telerrealidad en su tiempo libre.` },
+      body:(club,n)=> `${n} confirmó, sin avisarte antes, que va a participar de "Gran Hermano", el reality show de telerrealidad, en su tiempo libre.` },
     { id:'fumar_vestuario', tag:'DISCIPLINA', tagClass:'gold', needsPlayer:true, decision:'fumar_vestuario',
       title:(n)=> `${n} fue descubierto fumando en el vestuario`,
       body:(club,n)=> `Un utilero encontró a ${n} fumando adentro del vestuario, en pleno predio de entrenamiento, violando todas las normas del club.` },
@@ -3273,6 +3550,10 @@ const TEMPLATES = {
     { id:'lesion_grave', tag:'PARTE MÉDICO', tagClass:'alert', needsPlayer:true, matchesOut:[4,15],
       title:(n)=> `Lesión de gravedad de ${n}`,
       body:(club,n)=> `Estudios confirman una lesión seria en ${n}: baja prolongada, varios meses fuera de las canchas.` },
+    { id:'auto_grafiteado', tag:'HINCHADA', tagClass:'alert', decision:'auto_grafiteado',
+      requires: () => state.stats.fanRelation <= 35,
+      title:()=> 'Te grafitean el auto',
+      body:(club)=> `Amaneciste con el auto grafiteado con insultos a la salida de tu casa. La escalada de bronca de un sector de la hinchada de ${club} ya es un problema serio.` },
     { id:'no_renueva', tag:'CONTRATOS', tagClass:'alert', needsPlayer:true, decision:'renovar',
       title:(n)=> `${n} no quiere renovar su contrato`,
       body:(club,n)=> `${n} le comunicó al club que no tiene intención de renovar su vínculo, que vence pronto.` },
@@ -3301,9 +3582,6 @@ const TEMPLATES = {
     { id:'bev22', tag:'PATROCINADOR', tagClass:'alert', needsPlayer:true, decision:'bev22',
       title:(n)=> `Un patrocinador reclama por la conducta de ${n}`,
       body:(club,n)=> `Un patrocinador del club envió una queja formal por una conducta de ${n}, justo antes de un partido importante.` },
-    { id:'bev23', tag:'ARBITRAJE', tagClass:'alert', decision:'bev23',
-      title:()=> 'El VAR genera una gran confusión',
-      body:(club)=> `Una decisión confusa del VAR generó polémica en un amistoso de la gira internacional.` },
     { id:'bev24', tag:'PRENSA', tagClass:'alert', needsPlayer:true, decision:'bev24',
       title:(n)=> `Rumores de salida de ${n}`,
       body:(club,n)=> `La prensa instaló con fuerza un rumor sobre una posible salida de ${n} en el próximo mercado.` },
@@ -3337,15 +3615,26 @@ const TEMPLATES = {
     { id:'duelo_picante', tag:'ANÉCDOTA', tagClass:'alert', needsPlayer:2, decision:'duelo_picante',
       title:(n)=> `Duelo de comida picante entre ${n}`,
       body:(club,n)=> `${n} se retaron a un duelo de comida picante después del entrenamiento, y uno de los dos terminó en la guardia médica del club.` },
+    { id:'dt_ausente', tag:'BANCO', tagClass:'alert', decision:'dt_ausente',
+      title:()=> 'El técnico no puede estar en el banco',
+      body:(club)=> `Una sanción administrativa te deja afuera del banco de suplentes; tu ayudante dirige el próximo partido.`,
+      gameInstruction: 'No dirijas este partido en vivo: dejá que la CPU/tu asistente lo simule automáticamente (o jugalo sin controlar los cambios desde el banco), ya que el DT no está presente.' },
+    { id:'presion_economica', tag:'DIRIGENCIA', tagClass:'alert', financeSeverity:'media',
+      title:()=> 'Presión económica de la dirigencia',
+      body:(club)=> `La dirigencia de ${club} pide resultados financieros concretos: no alcanza con las buenas intenciones.` },
   ],
   critica: [
     { id:'dopaje', tag:'FALLO DISCIPLINARIO', tagClass:'alert', needsPlayer:true, matchesOut:[35,50],
       title:(n)=> `${n} da positivo en un control antidopaje`,
       body:(club,n)=> `${n} dio positivo en un control antidopaje. Le espera una sanción larga y un escándalo mediático.` },
+    { id:'hinchas_en_tu_casa', tag:'HINCHADA', tagClass:'alert', decision:'hinchas_en_tu_casa',
+      requires: () => state.stats.fanRelation <= 20,
+      title:()=> 'Un grupo de hinchas se presenta en tu casa',
+      body:(club)=> `La bronca escaló al máximo: un grupo de hinchas de ${club} se plantó en la puerta de tu casa a exigirte explicaciones y un cambio de rumbo inmediato.` },
     { id:'apuestas', tag:'FALLO DISCIPLINARIO', tagClass:'alert', needsPlayer:true, matchesOut:[30,45],
       title:(n)=> `${n}, investigado por apuestas deportivas`,
       body:(club,n)=> `${n} está siendo investigado por apuestas deportivas irregulares. Podría recibir hasta dos años de sanción.` },
-    { id:'crisis_economica', tag:'DIRIGENCIA', tagClass:'alert', decision:'recaudar',
+    { id:'crisis_economica', tag:'DIRIGENCIA', tagClass:'alert', financeSeverity:'grave',
       title:()=> 'Crisis económica en el club',
       body:(club)=> `La dirigencia de ${club} informa que no hay margen para comprar jugadores y exige recaudar una cifra importante en el próximo mercado.` },
     { id:'lesion_severa', tag:'PARTE MÉDICO', tagClass:'alert', needsPlayer:true, matchesOut:[25,50],
@@ -3724,8 +4013,81 @@ const PLAYER_DEATH_SCENARIOS = [
   'murió en un confuso episodio relacionado con una discusión de pareja.',
   'fue alcanzado por un objeto que cayó desde un edificio, en plena vía pública.',
 ];
+// ------------------ CRISIS FINANCIERA: restricciones para cumplir en el FC26/27 real ------------------
+const FINANCE_SEVERITY_ORDER = ['leve','media','grave'];
+// Los montos dependen de si el club es un "europeo fuerte" (presupuestos reales de cientos de
+// millones por ventana) o no (MLS, Liga MX, ligas chicas, etc. -ahí un club promedio gasta
+// 5-15M por ventana, así que exigir 40-70M es realmente muy difícil de cumplir, tal como se pidió).
+const ELITE_CLUB_KEYWORDS = [
+  'real madrid', 'barcelona', 'manchester city', 'man city', 'manchester united', 'man utd', 'man united',
+  'liverpool', 'chelsea', 'arsenal', 'tottenham', 'paris saint-germain', 'psg',
+  'bayern', 'borussia dortmund', 'juventus', 'inter milan', 'internazionale', 'ac milan',
+  'atletico madrid', 'atlético madrid', 'napoli',
+];
+function isEliteClub(){
+  const name = (state.profile.club || '').toLowerCase();
+  return ELITE_CLUB_KEYWORDS.some(k => name.includes(k));
+}
+const FINANCE_SEVERITY_CONFIG = {
+  leve:  { deadlineSeasons: 1, sellAmount: { normal: 0,  elite: 0 } },
+  media: { deadlineSeasons: 2, sellAmount: { normal: 20, elite: 100 } },
+  grave: { deadlineSeasons: 3, sellAmount: { normal: 45, elite: 200 } },
+};
+const BANKRUPTCY_CONFIG = { deadlineSeasons: 5, sellAmount: { normal: 70, elite: 400 } };
+function startFinanceCrisis(baseSeverity){
+  const strikes = state.financeCrisis.strikes;
+  let idx = Math.min(FINANCE_SEVERITY_ORDER.indexOf(baseSeverity) + strikes, FINANCE_SEVERITY_ORDER.length - 1);
+  const severity = FINANCE_SEVERITY_ORDER[idx];
+  const cfg = FINANCE_SEVERITY_CONFIG[severity];
+  const elite = isEliteClub();
+  const sellAmount = elite ? cfg.sellAmount.elite : cfg.sellAmount.normal;
+  state.financeCrisis.active = { severity, seasonsRemaining: cfg.deadlineSeasons, sellAmount };
+  const plazo = cfg.deadlineSeasons > 1 ? `en las próximas ${cfg.deadlineSeasons} temporadas` : 'durante la próxima temporada';
+  let txt = `No podés fichar refuerzos ${plazo}`;
+  if(sellAmount > 0) txt += `, y tenés que recaudar al menos $${sellAmount}M vendiendo jugadores en ese mismo plazo`;
+  txt += '. Cuando se cumpla el plazo te voy a preguntar si lo respetaste: si no, la restricción se agrava.';
+  return txt;
+}
+function checkFinanceCrisisAtSeasonClose(){
+  if(!state.financeCrisis.active) return;
+  state.financeCrisis.active.seasonsRemaining -= 1;
+  if(state.financeCrisis.active.seasonsRemaining <= 0){
+    const active = state.financeCrisis.active;
+    const syntheticEv = {
+      tag:'DIRIGENCIA', tagClass:'alert', decision:'finance_compliance', playerId:null,
+      _financeSeverity: active.severity, _financeSellAmount: active.sellAmount,
+      title: () => 'Vencimiento del plazo financiero',
+      body: () => `Se cumplió el plazo de la restricción financiera (nivel: ${active.severity}${active.sellAmount>0 ? `, recaudar $${active.sellAmount}M` : ''}). ¿La respetaste en tu FC26/27?`,
+    };
+    showMetaEventAlert(syntheticEv);
+  }
+}
+
+// ------------------ CONFERENCIA PREVIA A PARTIDOS DE MÁXIMA EXIGENCIA ------------------
+// Clásicos, superclásicos, finales, definitorios (mult >= 1.6): antes no había ninguna
+// pregunta previa a este tipo de partidos. Se dispara UNA vez por partido, apenas se entra
+// a su pantalla, y queda marcada para no repetirse si volvés a entrar.
+function checkPreMatchConference(m){
+  if(!m || m.preMatchDone || m.status === 'jugado') return;
+  const info = m.importance ? importanceInfo(m.comp, m.importance) : null;
+  if(!info || info.mult < 1.6) return;
+  m.preMatchDone = true;
+  const syntheticEv = {
+    tag:'PREVIA', tagClass:'alert', decision:'previa_grande', playerId:null,
+    title: () => `Previa de ${info.label.toLowerCase()} vs ${m.rival}`,
+    body: () => `Se acerca un partido de máxima exigencia. La previa ya está caliente y todos quieren saber cómo lo encara.`,
+  };
+  showMetaEventAlert(syntheticEv);
+}
+
 function instantiateEvent(tier){
-  const pool = TEMPLATES[tier.id];
+  // Algunos eventos solo tienen sentido narrativo en determinado contexto (por ejemplo, la
+  // hinchada solo te ataca el auto si la relación con la afición ya está mal). Esos templates
+  // llevan un `requires()` opcional; acá se filtra el pool a los elegibles y, si por algún
+  // motivo ninguno califica, se cae de nuevo al pool completo para no dejar la ruleta sin nada.
+  const fullPool = TEMPLATES[tier.id];
+  const eligible = fullPool.filter(t => !t.requires || t.requires());
+  const pool = eligible.length ? eligible : fullPool;
   const tpl = pool[Math.floor(Math.random()*pool.length)];
   const ev = { ...tpl, tierId: tier.id, tierLabel: tier.label };
 
@@ -3749,6 +4111,10 @@ function instantiateEvent(tier){
 
   if(tpl.matchesOut){
     ev.matchesOut = tpl.matchesOut[0]===tpl.matchesOut[1] ? tpl.matchesOut[0] : rangeOut(tpl.matchesOut[0], tpl.matchesOut[1]);
+    if(!ev.gameInstruction && ev.playerName){
+      const partidos = ev.matchesOut >= 900 ? 'de forma indefinida' : (ev.matchesOut === 1 ? 'el próximo partido' : `los próximos ${ev.matchesOut} partidos`);
+      ev.gameInstruction = `No convoques a ${ev.playerName} en tu FC26/27 durante ${partidos}.`;
+    }
   }
   if(tpl.id === 'muerte_jugador'){
     // Se fija UNA sola vez acá (no dentro de body(), que se llama varias veces para el mismo
@@ -3757,6 +4123,11 @@ function instantiateEvent(tier){
     const causa = PLAYER_DEATH_SCENARIOS[Math.floor(Math.random()*PLAYER_DEATH_SCENARIOS.length)];
     ev.body = (club, n) => `Una tragedia enluta a ${club}: ${n} ${causa} El plantel entra en duelo y el próximo partido queda en un segundo plano.`;
   }
+  if(tpl.financeSeverity){
+    // Igual que arriba: se calcula UNA sola vez y se guarda como texto fijo (no función),
+    // para que la restricción impuesta no cambie entre la alerta y el historial.
+    ev.gameInstruction = startFinanceCrisis(tpl.financeSeverity);
+  }
   return ev;
 }
 
@@ -3764,7 +4135,18 @@ let spinning = false;
 document.getElementById('spinBtn').addEventListener('click', () => {
   if(spinning || !activeMatchId) return;
   const m = state.matches.find(x=>x.id===activeMatchId);
-  if(!m || m.event) return;
+  // Bug real: si el partido que se estaba viendo ya no existe en state.matches (por ejemplo,
+  // porque se volvió a cargar una partida guardada más vieja mientras esta pantalla seguía
+  // abierta), el botón se quedaba "colgado": no tiraba error, pero tampoco giraba nunca, sin
+  // ningún aviso. Ahora, en vez de fallar en silencio, se avisa y se vuelve al calendario.
+  if(!m){
+    alert('Este partido ya no está en tu calendario actual (puede que la partida se haya recargado). Volvé al calendario y abrilo de nuevo.');
+    closeMatchView();
+    switchTab('calendario');
+    renderMatches();
+    return;
+  }
+  if(m.event) return;
   spinning = true;
   document.getElementById('spinBtn').disabled = true;
 
@@ -3890,6 +4272,32 @@ function decideMetaOutcome(key){
       renderPlayers();
     }
   }
+  if(o.financeOutcome === 'cumplido'){
+    state.financeCrisis.active = null;
+    state.financeCrisis.strikes = Math.max(0, state.financeCrisis.strikes - 1);
+  } else if(o.financeOutcome === 'incumplido'){
+    state.financeCrisis.strikes += 1;
+    if(state.financeCrisis.strikes >= 3){
+      const elite = isEliteClub();
+      const bAmount = elite ? BANKRUPTCY_CONFIG.sellAmount.elite : BANKRUPTCY_CONFIG.sellAmount.normal;
+      state.financeCrisis.active = { severity:'grave', seasonsRemaining: BANKRUPTCY_CONFIG.deadlineSeasons, sellAmount: bAmount };
+      adjustStatRaw('clubRelation', -20);
+      adjustStatRaw('fanRelation', -15);
+      const quiebraTexto = `Tras incumplir la restricción financiera varias veces seguidas, el club entra oficialmente en quiebra: no podés fichar refuerzos durante las próximas ${BANKRUPTCY_CONFIG.deadlineSeasons} temporadas y tenés que recaudar al menos $${bAmount}M vendiendo jugadores en ese mismo plazo.`;
+      state.eventHistory.unshift({ matchId:null, rival:'', date:'', tag:'QUIEBRA', title:'El club entra en quiebra', body: quiebraTexto });
+      renderEventHistory();
+      setTimeout(() => {
+        const bankruptcyEv = { tag:'QUIEBRA', tagClass:'alert', decision:null, title:()=>'EL CLUB ENTRA EN QUIEBRA', body:()=>`${quiebraTexto} Si esto se repite, tu continuidad como DT queda seriamente comprometida.` };
+        showMetaEventAlert(bankruptcyEv);
+      }, 300);
+    } else {
+      state.financeCrisis.active = null;
+      const baseSeverity = FINANCE_SEVERITY_ORDER[Math.min(state.financeCrisis.strikes, FINANCE_SEVERITY_ORDER.length-1)];
+      const instruction = startFinanceCrisis(baseSeverity);
+      state.eventHistory.unshift({ matchId:null, rival:'', date:'', tag:'DIRIGENCIA', title:'La crisis financiera se agrava', body: instruction });
+      renderEventHistory();
+    }
+  }
   state.eventHistory.unshift({ matchId:null, rival:'', date:'', tag: ev.tag, title: ev.title(), body: o.note || ev.body() });
   renderEventHistory();
   renderProfile();
@@ -3943,6 +4351,14 @@ function showEventAlert(ev){
   document.getElementById('alertTitle').textContent = ev.title(ev.playerName);
   document.getElementById('alertBody').textContent = ev.body(club, ev.playerName);
 
+  const giBox = document.getElementById('alertGameInstruction');
+  if(ev.gameInstruction){
+    giBox.style.display = 'block';
+    document.getElementById('alertGameInstructionText').textContent = ev.gameInstruction;
+  } else {
+    giBox.style.display = 'none';
+  }
+
   // Tipo C: este evento deja una "bomba" para más adelante. Se agenda apenas se muestra,
   // sin importar qué decisión (si la hay) elija después el usuario.
   if(ev.schedulesFuture){
@@ -3979,6 +4395,14 @@ function showResult(ev, addToHistory){
   document.getElementById('resultBody').textContent = ev.body(club, ev.playerName);
   document.getElementById('resultCard').classList.add('show');
 
+  const giBox = document.getElementById('resultGameInstruction');
+  if(ev.gameInstruction){
+    giBox.style.display = 'block';
+    document.getElementById('resultGameInstructionText').textContent = ev.gameInstruction;
+  } else {
+    giBox.style.display = 'none';
+  }
+
   renderDecisionBox(ev);
 
   if(addToHistory){
@@ -4005,11 +4429,6 @@ const DECISION_CONFIGS = {
     { key:'uno', label:'Sancionar solo al que lo empezó', effects:{clubRelation:+1, playerRelation:-2}, moodSplit:[-10,+3], note:'Sancionaste solo a uno de los dos.' },
     { key:'nada', label:'Dejarlo pasar puertas adentro', effects:{clubRelation:-3, playerRelation:+3}, moodBoth:+2, note:'Decidiste no sancionar a nadie.' },
   ],
-  recaudar: (ev) => [
-    { key:'vender', label:'Vender a una figura del plantel', effects:{clubRelation:+6, fanRelation:-8, playerRelation:-4}, note:'El club se tranquiliza económicamente, pero la hinchada no lo toma bien.' },
-    { key:'prestamo', label:'Pedirle al presidente un préstamo puente', effects:{clubRelation:-4, fanRelation:+2}, note:'Ganás tiempo, pero la relación con la dirigencia se resiente.' },
-    { key:'rechazar', label:'Rechazar la exigencia y bancarte el conflicto', effects:{clubRelation:-10, personality:+5}, note:'Plantaste una postura firme, pero quedaste en conflicto abierto con el club.' },
-  ],
   renovar: (ev) => [
     { key:'mejorar', label:'Mejorarle la oferta contractual', effects:{clubRelation:-3, playerRelation:+5}, mood:+10, note:'Convenciste al jugador con una mejora salarial.' },
     { key:'dejarlo_ir', label:'Dejarlo salir a fin de temporada', effects:{clubRelation:+2, playerRelation:-2}, mood:-5, note:'Aceptaste su salida a fin de temporada.' },
@@ -4026,6 +4445,21 @@ const DECISION_CONFIGS = {
   motin: () => [
     { key:'enfrentar', label:'Enfrentarlos y ponerte firme', effects:{fanRelation:-10, personality:+8, playerRelation:+3}, note:'Te plantaste firme ante la hinchada. Ganás carácter puertas adentro, pero afuera la relación empeora aún más.' },
     { key:'calmar', label:'Darles la razón y bajar la tensión', effects:{fanRelation:+10, personality:-6, clubRelation:+3}, note:'Reconociste los reclamos de la gente. Baja la tensión, pero tu imagen de mano dura se resiente.' },
+  ],
+  // Escalada de hostigamiento de la hinchada: primer escalón, algo menor (gomas pinchadas).
+  gomas_pinchadas: () => [
+    { key:'denunciar_gomas', label:'Hacer la denuncia policial', effects:{fanRelation:-2, clubRelation:2, personality:1}, note:'Radicaste la denuncia. El club respalda el reclamo, pero un sector de la hinchada lo toma como una provocación.' },
+    { key:'minimizar_gomas', label:'No darle mayor entidad y seguir con la semana', effects:{fanRelation:2, personality:-1}, note:'Preferiste no escalar el conflicto y seguir con la rutina normal.' },
+  ],
+  // Segundo escalón: ya es más agresivo (auto grafiteado).
+  auto_grafiteado: () => [
+    { key:'hablar_prensa_grafiti', label:'Denunciarlo públicamente en conferencia', effects:{fanRelation:-4, pressRelation:3, personality:2}, note:'Expusiste el hecho ante los medios. Gana visibilidad el reclamo, pero la tensión con la hinchada crece.' },
+    { key:'seguridad_privada', label:'Pedirle al club refuerzo de seguridad personal', effects:{clubRelation:-3, fanRelation:1, personality:-2}, note:'El club te asignó custodia extra. Baja el riesgo inmediato, pero cuesta recursos y da que hablar puertas afuera.' },
+  ],
+  // Escalón final: la hinchada se presenta directamente en tu casa (el más grave de la cadena).
+  hinchas_en_tu_casa: () => [
+    { key:'salir_hablar_casa', label:'Salir a hablar con ellos en persona', effects:{fanRelation:12, personality:-4, clubRelation:-2}, note:'Diste la cara en la puerta de tu casa. Es un golpe a tu imagen puertas adentro, pero baja mucho la tensión con la gente.' },
+    { key:'llamar_policia_casa', label:'Llamar a la policía y no salir', effects:{fanRelation:-8, personality:3, clubRelation:2}, note:'Preferiste no exponerte y dejar que la policía disuelva la protesta. Se resiente todavía más la relación con la hinchada.' },
   ],
   vestuario_crisis: () => [
     { key:'mano_dura', label:'Ponerte firme con el grupo', effects:{playerRelation:-6, personality:+8, clubRelation:+3}, note:'Te plantaste firme ante el plantel. Ganás carácter, pero el vestuario queda más resentido.' },
@@ -4127,10 +4561,6 @@ const DECISION_CONFIGS = {
   bev22: () => [
     { key:'mediar', label:'Mediar entre el jugador y el patrocinador', effects:{clubRelation:2, playerRelation:1}, mood:2, note:'Actuaste de puente para bajar la tensión comercial.' },
     { key:'respaldar_incond', label:'Respaldar al jugador sin condiciones', effects:{clubRelation:-3, playerRelation:3}, mood:4, note:'Priorizaste al jugador por sobre el reclamo comercial.' },
-  ],
-  bev23: () => [
-    { key:'sin_declarar', label:'No hacer declaraciones sobre el arbitraje', effects:{personality:1, pressRelation:-1}, note:'Preferiste no entrar en polémicas arbitrales.' },
-    { key:'cuestionar', label:'Cuestionar duro la decisión en conferencia', effects:{personality:-1, fanRelation:2, pressRelation:2}, note:'Saliste con dureza a cuestionar el fallo, la gente lo bancó.' },
   ],
   bev24: () => [
     { key:'desmentir_rumor', label:'Desmentirlo públicamente', effects:{playerRelation:2, pressRelation:-1}, mood:3, note:'Salieron a bajarle el tono al rumor entre vos y el jugador.' },
@@ -4414,6 +4844,15 @@ const DECISION_CONFIGS = {
     { key:'reirse_duelo', label:'Reírse y no darle más entidad', effects:{personality:1, playerRelation:1}, moodBoth:1, note:'El plantel se rio del episodio sin mayores consecuencias.' },
     { key:'prohibir_duelos', label:'Prohibir este tipo de desafíos en el vestuario', effects:{clubRelation:1, personality:1}, moodBoth:-2, note:'Pusiste un límite claro para que no se repita.' },
   ],
+  finance_compliance: (ev) => [
+    { key:'cumplido', label:'Sí, la respeté', effects:{clubRelation:6}, financeOutcome:'cumplido', note:'La dirigencia valora tu responsabilidad financiera. Se levanta la restricción.' },
+    { key:'incumplido', label:'No, no la respeté', effects:{clubRelation:-12, fanRelation:-8}, financeOutcome:'incumplido', note:'La dirigencia toma nota del incumplimiento. La situación económica se agrava.' },
+  ],
+  previa_grande: (ev) => [
+    { key:'confiado', label:'"Vamos a salir a ganarlo, no a especular"', effects:{personality:6, fanRelation:6, clubRelation:-2, pressRelation:-3}, note:'Subiste la apuesta frente a todos, antes de que se juegue una pelota.' },
+    { key:'cauto', label:'"Es un partido más, hay que jugarlo con la cabeza fría"', effects:{personality:-3, clubRelation:4}, note:'Bajaste la temperatura de la previa con un mensaje calculado.' },
+    { key:'evasivo', label:'"Prefiero hablar después del partido"', effects:{pressRelation:-3}, note:'Evitaste darle munición extra a la previa.' },
+  ],
 };
 
 const EFFECT_LABELS = {
@@ -4456,6 +4895,12 @@ function renderDecisionBox(ev){
     const chosenOpt = opts.find(o=>o.key===already);
     note.style.display = 'block';
     note.textContent = chosenOpt ? chosenOpt.note : '';
+    if(chosenOpt && chosenOpt.sidelineMatches && ev.playerName){
+      const giBox = document.getElementById('resultGameInstruction');
+      const partidos = chosenOpt.sidelineMatches >= 900 ? 'de forma indefinida' : (chosenOpt.sidelineMatches === 1 ? 'el próximo partido' : `los próximos ${chosenOpt.sidelineMatches} partidos`);
+      giBox.style.display = 'block';
+      document.getElementById('resultGameInstructionText').textContent = `No convoques a ${ev.playerName} en tu FC26/27 durante ${partidos}.`;
+    }
   }
 }
 
@@ -4532,22 +4977,96 @@ document.getElementById('seasonYear').addEventListener('change', () => {
 
 function competitionsForClose(){
   if(state.profile.competitions && state.profile.competitions.length){
-    return state.profile.competitions.map(c => ({
-      name: c,
-      objective: state.profile.competitionObjectives[c] || 'Sin objetivo definido',
-      priority: (state.profile.competitionPriority && state.profile.competitionPriority[c]) || 'medio',
-    }));
+    // Las competencias marcadas como "no se disputa esta temporada" no piden evaluación de
+    // objetivo al cerrar la temporada (no tiene sentido preguntar si se cumplió algo que
+    // directamente no se jugó).
+    const notPlayed = state.profile.competitionNotPlayed || {};
+    return state.profile.competitions
+      .filter(c => !notPlayed[c])
+      .map(c => ({
+        name: c,
+        objective: state.profile.competitionObjectives[c] || 'Sin objetivo definido',
+        priority: (state.profile.competitionPriority && state.profile.competitionPriority[c]) || 'medio',
+      }));
   }
   return [{ name: 'General', objective: state.profile.goal || 'Sin objetivo definido', priority: 'medio' }];
 }
 
 const PRIORITY_LABELS = { obligatorio:'🔴 Obligatorio', medio:'🟡 Nivel medio', bajo:'🟢 Nivel bajo' };
 
+// El nivel de prioridad de cada objetivo escala mucho el impacto real de cumplirlo o no.
+// Se usa adjustStatRaw (sin el freno general) para que un objetivo obligatorio incumplido
+// pueda, sumado a otro, llegar a costarte el puesto de verdad. Estas tablas y la función de
+// abajo son compartidas por el cierre de temporada completo Y por el registro individual
+// "a mitad de temporada", para no duplicar la lógica de consecuencias en dos lugares.
+const PRIORITY_BONUS = {
+  obligatorio: { clubRelation:10, fanRelation:10, playerRelation:6 },
+  medio:       { clubRelation:6,  fanRelation:6,  playerRelation:4 },
+  bajo:        { clubRelation:3,  fanRelation:3,  playerRelation:2 },
+};
+const PRIORITY_PENALTY = {
+  obligatorio: { clubRelation:-15, fanRelation:-15, playerRelation:-8 },
+  medio:       { clubRelation:-8,  fanRelation:-8,  playerRelation:-5 },
+  bajo:        { clubRelation:-3,  fanRelation:-3,  playerRelation:-2 },
+};
+
+// Aplica la consecuencia real de cumplir/no cumplir un objetivo de competencia: guarda el
+// trofeo/registro en el Palmarés y mueve las barras. `midSeason: true` es para cuando se
+// registra ANTES del cierre de temporada (objetivo cumplido/definido a mitad de camino);
+// devuelve true si lo registrado fue un título ganado (para disparar el festejo).
+function applyObjectiveOutcome(comp, objective, priority, met, result, midSeason){
+  const club = state.profile.club || 'el club';
+  state.trophies.unshift({
+    season: state.season.year || '—',
+    competition: comp,
+    objective,
+    priority,
+    met,
+    trophy: met ? result : '',
+    position: result,
+    midSeason: !!midSeason
+  });
+
+  let wonTitle = false;
+  if(met){
+    const bonus = PRIORITY_BONUS[priority];
+    adjustStatRaw('clubRelation', bonus.clubRelation);
+    adjustStatRaw('fanRelation', bonus.fanRelation);
+    adjustStatRaw('playerRelation', bonus.playerRelation);
+    if(objective === 'Ganar el título'){ state.stintStats.titles += 1; wonTitle = true; }
+    state.eventHistory.unshift({
+      matchId:null, rival:'', date:'',
+      tag:'BALANCE DE TEMPORADA', title:`${comp}: objetivo cumplido${midSeason ? ' (a mitad de temporada)' : ''}`,
+      body:`${club} cumplió el objetivo en ${comp} (${objective})${result ? ': '+result : ''}.${midSeason ? ' Se registró apenas se confirmó, sin esperar al cierre de temporada.' : ''}`
+    });
+  } else {
+    const penalty = PRIORITY_PENALTY[priority];
+    adjustStatRaw('clubRelation', penalty.clubRelation);
+    adjustStatRaw('fanRelation', penalty.fanRelation);
+    adjustStatRaw('playerRelation', penalty.playerRelation);
+    state.eventHistory.unshift({
+      matchId:null, rival:'', date:'',
+      tag:'BALANCE DE TEMPORADA', title:`${comp}: objetivo no cumplido${priority==='obligatorio' ? ' (OBLIGATORIO)' : ''}`,
+      body:`${club} no cumplió el objetivo en ${comp} (${objective})${priority==='obligatorio' ? '. Era un objetivo obligatorio: la dirigencia y la afición lo toman muy mal' : '. Cae la relación con la dirigencia, la afición y el plantel'}.`
+    });
+  }
+  return wonTitle;
+}
+
 function renderCloseSeasonRows(){
   const box = document.getElementById('closeSeasonRows');
   if(!box) return;
   const comps = competitionsForClose();
-  box.innerHTML = comps.map((c,i) => `
+  const resolved = state.profile.competitionResolvedThisSeason || {};
+  box.innerHTML = comps.map((c,i) => {
+    if(resolved[c.name]){
+      return `
+      <div class="card" style="margin-bottom:10px; padding:14px 16px;">
+        <div style="font-weight:700; margin-bottom:4px;">${c.name} <span class="dateline" style="font-weight:400;">· ${PRIORITY_LABELS[c.priority]}</span></div>
+        <div class="dateline">✅ Ya registrado esta temporada (${resolved[c.name]}). No hace falta volver a evaluarlo al cerrar la temporada.</div>
+      </div>`;
+    }
+    return `
     <div class="card" style="margin-bottom:10px; padding:14px 16px;">
       <div style="font-weight:700; margin-bottom:4px;">${c.name} <span class="dateline" style="font-weight:400;">· ${PRIORITY_LABELS[c.priority]}</span></div>
       <div class="dateline" style="margin-bottom:10px;">Objetivo: ${c.objective}</div>
@@ -4564,74 +5083,61 @@ function renderCloseSeasonRows(){
           <input class="close-season-result" data-comp="${c.name}" type="text" placeholder="Ej: Campeón, 4°, Semifinales">
         </div>
       </div>
-    </div>
-  `).join('');
+      <button class="btn ghost small" type="button" style="margin-top:10px;" onclick="markObjectiveNow('${c.name.replace(/'/g,"\\'")}')">✅ Ya se cumplió: registrarlo ahora (no esperar al cierre)</button>
+    </div>`;
+  }).join('');
+}
+
+// Registra el objetivo de UNA competencia en el momento (mitad de temporada), sin esperar a
+// "Cerrar temporada". Usa los mismos valores que ya haya cargados en esa fila (sí/no cumplido
+// + resultado); por defecto asume que se cumplió, ya que el botón dice explícitamente eso.
+function markObjectiveNow(comp){
+  const sel = document.querySelector(`.close-season-met[data-comp="${CSS.escape(comp)}"]`);
+  if(!sel) return;
+  const objective = sel.dataset.objective;
+  const priority = sel.dataset.priority || 'medio';
+  const met = sel.value === 'si';
+  const resultInput = document.querySelector(`.close-season-result[data-comp="${CSS.escape(comp)}"]`);
+  const result = resultInput ? resultInput.value.trim() : '';
+  if(met && !result){
+    alert('Contá el resultado final (título, posición, etc.) antes de registrarlo.');
+    return;
+  }
+  const wonTitle = applyObjectiveOutcome(comp, objective, priority, met, result, true);
+  if(!state.profile.competitionResolvedThisSeason) state.profile.competitionResolvedThisSeason = {};
+  state.profile.competitionResolvedThisSeason[comp] = met ? (result || 'cumplido') : 'no cumplido';
+
+  renderProfile();
+  renderEventHistory();
+  renderTrophies();
+  renderTrophyCabinet();
+  renderCloseSeasonRows();
+  checkExtremeStates();
+  if(wonTitle && document.getElementById('eventAlertModal').style.display !== 'flex'){
+    showTitleCelebration(comp);
+  }
 }
 
 document.getElementById('closeSeasonBtn').addEventListener('click', () => {
-  const club = state.profile.club || 'el club';
-  const metSelects = document.querySelectorAll('.close-season-met');
-  if(metSelects.length === 0) return;
+  const comps = competitionsForClose();
+  if(comps.length === 0) return;
   const titlesWonThisClose = [];
 
-  // El nivel de prioridad de cada objetivo escala mucho el impacto real de cumplirlo o no.
-  // Usa adjustStatRaw (sin el freno general) para que un objetivo obligatorio incumplido
-  // pueda, sumado a otro, llegar a costarte el puesto de verdad.
-  const PRIORITY_BONUS = {
-    obligatorio: { clubRelation:10, fanRelation:10, playerRelation:6 },
-    medio:       { clubRelation:6,  fanRelation:6,  playerRelation:4 },
-    bajo:        { clubRelation:3,  fanRelation:3,  playerRelation:2 },
-  };
-  const PRIORITY_PENALTY = {
-    obligatorio: { clubRelation:-15, fanRelation:-15, playerRelation:-8 },
-    medio:       { clubRelation:-8,  fanRelation:-8,  playerRelation:-5 },
-    bajo:        { clubRelation:-3,  fanRelation:-3,  playerRelation:-2 },
-  };
-
-  metSelects.forEach(sel => {
+  document.querySelectorAll('.close-season-met').forEach(sel => {
     const comp = sel.dataset.comp;
     const objective = sel.dataset.objective;
     const priority = sel.dataset.priority || 'medio';
     const met = sel.value === 'si';
     const resultInput = document.querySelector(`.close-season-result[data-comp="${CSS.escape(comp)}"]`);
     const result = resultInput ? resultInput.value.trim() : '';
-
-    state.trophies.unshift({
-      season: state.season.year || '—',
-      competition: comp,
-      objective,
-      priority,
-      met,
-      trophy: met ? result : '',
-      position: result
-    });
-
-    if(met){
-      const bonus = PRIORITY_BONUS[priority];
-      adjustStatRaw('clubRelation', bonus.clubRelation);
-      adjustStatRaw('fanRelation', bonus.fanRelation);
-      adjustStatRaw('playerRelation', bonus.playerRelation);
-      if(objective === 'Ganar el título'){ state.stintStats.titles += 1; titlesWonThisClose.push(comp); }
-      state.eventHistory.unshift({
-        matchId:null, rival:'', date:'',
-        tag:'BALANCE DE TEMPORADA', title:`${comp}: objetivo cumplido`,
-        body:`${club} cumplió el objetivo en ${comp} (${objective})${result ? ': '+result : ''}.`
-      });
-    } else {
-      const penalty = PRIORITY_PENALTY[priority];
-      adjustStatRaw('clubRelation', penalty.clubRelation);
-      adjustStatRaw('fanRelation', penalty.fanRelation);
-      adjustStatRaw('playerRelation', penalty.playerRelation);
-      state.eventHistory.unshift({
-        matchId:null, rival:'', date:'',
-        tag:'BALANCE DE TEMPORADA', title:`${comp}: objetivo no cumplido${priority==='obligatorio' ? ' (OBLIGATORIO)' : ''}`,
-        body:`${club} no cumplió el objetivo en ${comp} (${objective})${priority==='obligatorio' ? '. Era un objetivo obligatorio: la dirigencia y la afición lo toman muy mal' : '. Cae la relación con la dirigencia, la afición y el plantel'}.`
-      });
-    }
+    const wonTitle = applyObjectiveOutcome(comp, objective, priority, met, result, false);
+    if(wonTitle) titlesWonThisClose.push(comp);
   });
 
   state.stintStats.seasons += 1;
   state.profile.objectivesLocked = false;
+  // Arranca en blanco el registro de "ya evaluado a mitad de temporada" para la nueva temporada.
+  state.profile.competitionResolvedThisSeason = {};
   // Avanza el año automáticamente a la temporada siguiente (ej: "2026" -> "2027", "2026/27" -> "2027/28").
   if(state.profile.year){
     const yearMatch = state.profile.year.match(/(\d{4})/);
@@ -4650,12 +5156,21 @@ document.getElementById('closeSeasonBtn').addEventListener('click', () => {
   renderTrophies();
   renderTrophyCabinet();
   renderCloseSeasonRows();
+  // Revisa si venció el plazo de alguna restricción financiera activa, antes de festejar un
+  // título (si hay las dos cosas a la vez, la pregunta financiera prevalece por ser una decisión).
+  checkFinanceCrisisAtSeasonClose();
   // Si se ganó algún título y no hay una crisis institucional tapando la pantalla en este
   // mismo instante, festejalo con el modal de campeón (confeti incluido).
   if(titlesWonThisClose.length > 0 && document.getElementById('eventAlertModal').style.display !== 'flex'){
     showTitleCelebration(titlesWonThisClose.join(' y '));
   }
 });
+
+// Índice del trofeo que se está editando en este momento (null = ninguno). Editar un trofeo ya
+// cargado solo corrige el REGISTRO (texto de resultado, si se cumplió o no); a propósito NO
+// vuelve a aplicar ni deshacer el efecto en las barras, para no poder "farmear" relación
+// editando trofeos viejos para arriba y para abajo.
+let editingTrophyIdx = null;
 
 function renderTrophies(){
   const list = document.getElementById('trophyList');
@@ -4666,15 +5181,64 @@ function renderTrophies(){
     return;
   }
   empty.style.display = 'none';
-  list.innerHTML = state.trophies.map(t => `
+  list.innerHTML = state.trophies.map((t,idx) => {
+    if(editingTrophyIdx === idx){
+      return `
+      <div class="match-row" style="cursor:default; display:block;">
+        <div class="rival" style="margin-bottom:8px;">${t.competition || ''} · Temporada ${t.season}</div>
+        <div class="field-row">
+          <div>
+            <label>¿Se cumplió?</label>
+            <select id="editTrophyMet">
+              <option value="si" ${t.met?'selected':''}>Sí, se cumplió</option>
+              <option value="no" ${!t.met?'selected':''}>No, no se cumplió</option>
+            </select>
+          </div>
+          <div>
+            <label>Resultado (título, posición, etc.)</label>
+            <input id="editTrophyResult" type="text" value="${(t.trophy || t.position || '').replace(/"/g,'&quot;')}">
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:10px;">
+          <button class="btn ghost small" type="button" onclick="saveTrophyEdit(${idx})">Guardar cambios</button>
+          <button class="btn ghost small" type="button" onclick="cancelTrophyEdit()">Cancelar</button>
+        </div>
+      </div>`;
+    }
+    return `
     <div class="match-row" style="cursor:default;">
       <div class="left">
         <div class="rival">${t.competition || ''}${t.trophy ? ' — Campeón: '+t.trophy : (t.position ? ' — '+t.position : '')}</div>
-        <div class="when">Temporada ${t.season} · Objetivo: ${t.objective}</div>
+        <div class="when">Temporada ${t.season} · Objetivo: ${t.objective}${t.midSeason ? ' · registrado a mitad de temporada' : ''}</div>
       </div>
-      <div class="status-tag ${t.met ? 'jugado' : ''}" style="${!t.met ? 'color:var(--alert); border-color:var(--alert);' : ''}">${t.met ? 'cumplido' : 'no cumplido'}</div>
-    </div>
-  `).join('');
+      <div style="display:flex; align-items:center; gap:8px;">
+        <div class="status-tag ${t.met ? 'jugado' : ''}" style="${!t.met ? 'color:var(--alert); border-color:var(--alert);' : ''}">${t.met ? 'cumplido' : 'no cumplido'}</div>
+        <button class="link-btn" type="button" onclick="editTrophy(${idx})">Editar</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function editTrophy(idx){
+  editingTrophyIdx = idx;
+  renderTrophies();
+}
+function cancelTrophyEdit(){
+  editingTrophyIdx = null;
+  renderTrophies();
+}
+function saveTrophyEdit(idx){
+  const t = state.trophies[idx];
+  if(!t) return;
+  const met = document.getElementById('editTrophyMet').value === 'si';
+  const result = document.getElementById('editTrophyResult').value.trim();
+  t.met = met;
+  t.trophy = met ? result : '';
+  t.position = result;
+  editingTrophyIdx = null;
+  renderTrophies();
+  renderTrophyCabinet();
+  persist();
 }
 
 function showTitleCelebration(compName){
@@ -4749,10 +5313,15 @@ document.getElementById('changeClubBtn').addEventListener('click', () => {
   state.eventHistory.unshift({ matchId:null, rival:'', date:'', tag:'CAMBIO DE CLUB', title:`Salida de ${oldClub}`, body: farewell });
 
   // Nuevo club: se resetean plantel y calendario, las barras arrancan en punto medio salvo la personalidad que se mantiene.
-  state.profile = { name: state.profile.name, club: newClub, year: newYear, goal: '', photo: state.profile.photo, league:'', competitions:[], competitionObjectives:{}, competitionPriority:{}, objectivesLocked:false };
+  state.profile = { name: state.profile.name, club: newClub, year: newYear, goal: '', photo: state.profile.photo, league:'', competitions:[], competitionObjectives:{}, competitionPriority:{}, objectivesLocked:false, competitionNotPlayed:{}, competitionResolvedThisSeason:{} };
   state.stats = { personality: state.stats.personality, clubRelation:50, playerRelation:50, fanRelation:50, pressRelation:50 };
   state.players = [];
   state.matches = [];
+  // Bug real: la línea de tiempo del club quedaba con los partidos del club VIEJO después de
+  // cambiar de club (nunca se reiniciaba, a diferencia de matches y players). Se reinicia acá
+  // para que arranque en blanco con cada nuevo ciclo. El archivo de informes SÍ se conserva:
+  // ya tiene la entrada de "Salida de <club viejo>" que sirve de marca de transición.
+  state.timeline = [];
   state.playerMood = {};
   state.playerAvailability = {};
   state.crisisFired = false;
@@ -4780,6 +5349,7 @@ document.getElementById('changeClubBtn').addEventListener('click', () => {
   renderPlayers();
   renderMatches();
   renderEventHistory();
+  renderTimeline();
   renderCareer();
 });
 
@@ -4861,18 +5431,167 @@ function loadSampleData(){
 }
 document.getElementById('loadSampleBtn').addEventListener('click', loadSampleData);
 
+// ------------------ SINCRONIZACIÓN EN LA NUBE (Firebase) ------------------
+// Guardado en la nube además del localStorage: así la partida sobrevive aunque el navegador
+// del dispositivo borre sus datos locales (algo que Safari/iOS hace con cierta frecuencia).
+// Usamos Realtime Database con reglas abiertas (mismo nivel de "seguridad" que el sistema de
+// usuario/PIN actual, que tampoco es una autenticación real del lado del servidor).
+const firebaseConfig = {
+  apiKey: "AIzaSyAy7j_Ynp2rr6THmXY6rsJ3pHN5Hq5pVdA",
+  authDomain: "granmanager-f54f3.firebaseapp.com",
+  databaseURL: "https://granmanager-f54f3-default-rtdb.firebaseio.com",
+  projectId: "granmanager-f54f3",
+  storageBucket: "granmanager-f54f3.firebasestorage.app",
+  messagingSenderId: "651966013355",
+  appId: "1:651966013355:web:8df7eb9c0d5f9d44787cee",
+  measurementId: "G-SZ33JGQ93B"
+};
+let cloudDb = null;
+try{
+  if(typeof firebase !== 'undefined'){
+    firebase.initializeApp(firebaseConfig);
+    cloudDb = firebase.database();
+  }
+}catch(e){
+  console.warn('No se pudo inicializar la sincronización en la nube:', e);
+}
+
+// Las claves de Realtime Database no pueden tener '.', '#', '$', '[', ']', '/'. El usuario ya
+// está restringido a [a-z0-9_.\-], así que solo el punto necesita reemplazo acá.
+function cloudKeyFor(user){ return user.toLowerCase().replace(/[.#$\[\]/]/g, '_'); }
+
+function showCloudSyncBanner(show){
+  const banner = document.getElementById('cloudSyncFailBanner');
+  if(banner) banner.style.display = show ? 'block' : 'none';
+}
+
+function persistToCloud(){
+  if(!currentUser || !cloudDb) return;
+  const payload = { pin: currentPin, nextId, state, savedAt: Date.now() };
+  cloudDb.ref('saves/' + cloudKeyFor(currentUser)).set(payload)
+    .then(() => showCloudSyncBanner(false))
+    .catch((e) => { console.warn('No se pudo sincronizar con la nube:', e); showCloudSyncBanner(true); });
+}
+
+// Trae la partida guardada en la nube para un usuario, con un timeout corto para no colgar el
+// login si no hay conexión: en ese caso simplemente se sigue con lo que haya en localStorage.
+function fetchCloudSave(user){
+  if(!cloudDb) return Promise.resolve(null);
+  return Promise.race([
+    cloudDb.ref('saves/' + cloudKeyFor(user)).once('value').then(snap => snap.val()),
+    new Promise(resolve => setTimeout(() => resolve(null), 6000))
+  ]).catch((e) => { console.warn('No se pudo consultar la nube:', e); return null; });
+}
+
 // ------------------ PERSISTENCIA (localStorage) ------------------
 function saveKeyFor(user){ return 'granmanager_save_' + user.toLowerCase(); }
 
+// Antes, si localStorage.setItem fallaba (por ejemplo, por límite de espacio del navegador
+// lleno después de varios días de partida con fotos, historial, etc.), el error se tragaba en
+// un console.warn que el jugador nunca ve, y la app seguía "andando" sin avisar que en
+// realidad NADA se estaba guardando desde ese momento. Eso es exactamente lo que puede hacer
+// que, días después, al volver a entrar, la partida cargada sea una versión vieja (la última
+// que sí se guardó con éxito) con jugadores y partidos que ya no están. Ahora un fallo de
+// guardado se muestra en un cartel visible y persistente hasta que un guardado vuelva a
+// funcionar, en vez de fallar en silencio.
+let saveIsFailing = false;
 function persist(){
   if(!currentUser) return;
-  const payload = { pin: currentPin, nextId, state };
+  const payload = { pin: currentPin, nextId, state, savedAt: Date.now() };
   try{
     localStorage.setItem(saveKeyFor(currentUser), JSON.stringify(payload));
+    if(saveIsFailing){
+      saveIsFailing = false;
+      const banner = document.getElementById('saveFailBanner');
+      if(banner) banner.style.display = 'none';
+    }
   }catch(e){
     console.warn('No se pudo guardar la partida:', e);
+    saveIsFailing = true;
+    const banner = document.getElementById('saveFailBanner');
+    if(banner) banner.style.display = 'block';
   }
+  persistToCloud();
 }
+
+// ------------------ COPIA DE SEGURIDAD MANUAL (exportar/importar a archivo) ------------------
+// El guardado normal vive SOLO en el localStorage de este navegador/dispositivo puntual: no se
+// sincroniza entre el celular y la PC, y un navegador puede borrar ese espacio (memoria llena,
+// modo privado, "borrar datos de navegación", etc.) sin previo aviso. Exportar a un archivo es
+// la única forma de tener una copia que sobrevive a eso y que se puede pasar entre dispositivos.
+document.getElementById('exportSaveBtn').addEventListener('click', () => {
+  if(!currentUser) return;
+  const payload = { pin: currentPin, nextId, state };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const today = new Date().toISOString().slice(0,10);
+  a.href = url;
+  a.download = `gran-manager-${currentUser}-${today}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('importSaveBtn').addEventListener('click', () => {
+  document.getElementById('importSaveInput').click();
+});
+
+document.getElementById('importSaveInput').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let parsed;
+    try{
+      parsed = JSON.parse(reader.result);
+    }catch(err){
+      alert('El archivo no es una copia de seguridad válida de Gran Manager.');
+      e.target.value = '';
+      return;
+    }
+    if(!parsed || !parsed.state || !parsed.state.profile){
+      alert('El archivo no es una copia de seguridad válida de Gran Manager.');
+      e.target.value = '';
+      return;
+    }
+    if(!confirm('Esto va a REEMPLAZAR toda la partida actual por la de la copia de seguridad. ¿Seguro que querés continuar?')){
+      e.target.value = '';
+      return;
+    }
+    nextId = parsed.nextId || nextId;
+    if(parsed.pin) currentPin = parsed.pin;
+    Object.keys(state).forEach(k => delete state[k]);
+    Object.assign(state, parsed.state);
+    if(!state.profile.competitionNotPlayed) state.profile.competitionNotPlayed = {};
+    if(!state.profile.competitionResolvedThisSeason) state.profile.competitionResolvedThisSeason = {};
+    if(!state.timeline) state.timeline = [];
+    if(!state.financeCrisis) state.financeCrisis = { active: null, strikes: 0 };
+    if(!state.coachStability) state.coachStability = { cooldown:0, threatWarned:false, pressureFlags:{}, warnFlags:{} };
+    if(!state.stintStats) state.stintStats = { played:0, won:0, drawn:0, lost:0, seasons:0, titles:0 };
+    if(!state.pendingFutureEvents) state.pendingFutureEvents = [];
+    document.getElementById('dtName').value = state.profile.name || '';
+    document.getElementById('dtClub').value = state.profile.club || '';
+    document.getElementById('dtYear').value = state.profile.year || '';
+    document.getElementById('dtGoal').value = state.profile.goal || '';
+    document.getElementById('seasonYear').value = state.season.year || '';
+    if(state.profile.league && LEAGUE_DB[state.profile.league]){
+      leagueSelect.value = state.profile.league;
+      updateClubOptions();
+      document.getElementById('dtClubSelect').value = state.profile.club || '';
+    }
+    closeMatchView();
+    switchTab('resumen');
+    applyGameMode();
+    renderAll();
+    renderOnboardingChecklist();
+    persist();
+    alert('Copia de seguridad restaurada correctamente.');
+    e.target.value = '';
+  };
+  reader.readAsText(file);
+});
 
 function renderAll(){
   renderProfile();
@@ -4898,6 +5617,10 @@ function startApp(user, pin, loadedData){
     document.getElementById('seasonYear').value = state.season.year || '';
     if(!state.profile.competitionObjectives) state.profile.competitionObjectives = {};
     if(!state.profile.competitionPriority) state.profile.competitionPriority = {};
+    if(!state.profile.competitionNotPlayed) state.profile.competitionNotPlayed = {};
+    if(!state.profile.competitionResolvedThisSeason) state.profile.competitionResolvedThisSeason = {};
+    if(!state.timeline) state.timeline = [];
+    if(!state.financeCrisis) state.financeCrisis = { active: null, strikes: 0 };
     if(!state.coachStability) state.coachStability = { cooldown:0, threatWarned:false, pressureFlags:{}, warnFlags:{} };
     if(state.consecutiveLosses === undefined) state.consecutiveLosses = 0;
     if(!state.stintStats) state.stintStats = { played:0, won:0, drawn:0, lost:0, seasons:0, titles:0 };
@@ -4923,7 +5646,7 @@ function startApp(user, pin, loadedData){
   if(!loadedData) persist();
 }
 
-document.getElementById('loginBtn').addEventListener('click', () => {
+document.getElementById('loginBtn').addEventListener('click', async () => {
   const user = document.getElementById('loginUser').value.trim().toLowerCase();
   const pin = document.getElementById('loginPin').value.trim();
   const msg = document.getElementById('loginMsg');
@@ -4931,10 +5654,35 @@ document.getElementById('loginBtn').addEventListener('click', () => {
   if(!/^[a-z0-9_.\-]{3,20}$/.test(user)){ msg.textContent = 'El usuario debe tener entre 3 y 20 caracteres, sin espacios ni símbolos raros (letras, números, punto, guion o guion bajo).'; return; }
   if(pin.length < 4){ msg.textContent = 'La clave tiene que tener al menos 4 caracteres.'; return; }
 
+  const loginBtn = document.getElementById('loginBtn');
+  loginBtn.disabled = true;
+  const originalLabel = loginBtn.textContent;
+  loginBtn.textContent = 'Ingresando…';
+
+  let localSaved = null;
   const raw = localStorage.getItem(saveKeyFor(user));
   if(raw){
-    let saved;
-    try{ saved = JSON.parse(raw); }catch(e){ msg.textContent = 'La partida guardada está dañada.'; return; }
+    try{ localSaved = JSON.parse(raw); }catch(e){
+      msg.textContent = 'La partida guardada está dañada.';
+      loginBtn.disabled = false; loginBtn.textContent = originalLabel;
+      return;
+    }
+  }
+
+  // Consultamos la nube: si este dispositivo no tiene nada local (o tiene una versión vieja),
+  // pero la nube sí tiene guardado algo, usamos eso — es justamente lo que evita el bug de
+  // "entré y no tenía nada" cuando el navegador perdió sus datos locales.
+  const cloudSaved = await fetchCloudSave(user);
+
+  let saved = localSaved;
+  if(cloudSaved && (!localSaved || (cloudSaved.savedAt||0) >= (localSaved.savedAt||0))){
+    saved = cloudSaved;
+  }
+
+  loginBtn.disabled = false;
+  loginBtn.textContent = originalLabel;
+
+  if(saved){
     if(saved.pin !== pin){ msg.textContent = 'Clave incorrecta para ese usuario.'; return; }
     if(saved.state && saved.state.deceased){
       document.getElementById('loginScreen').style.display = 'none';
@@ -4943,6 +5691,8 @@ document.getElementById('loginBtn').addEventListener('click', () => {
       return;
     }
     startApp(user, pin, saved);
+    // Sincroniza local y nube con la versión ganadora, para que ambos queden alineados.
+    persist();
   } else {
     state.frenzyMode = document.getElementById('frenzyModeCheck').checked;
     startApp(user, pin, null);
@@ -4952,6 +5702,22 @@ document.getElementById('loginBtn').addEventListener('click', () => {
 
 document.getElementById('welcomeModalBtn').addEventListener('click', () => {
   document.getElementById('welcomeModal').style.display = 'none';
+});
+
+// Botón de guardado manual: usa el mismo sistema de guardado automático (persist() a
+// localStorage), simplemente lo dispara a demanda para que el jugador se asegure de que
+// quedó grabado, sin reemplazar ni tocar el guardado automático existente.
+document.getElementById('manualSaveBtn').addEventListener('click', () => {
+  const btn = document.getElementById('manualSaveBtn');
+  if(!currentUser){ return; }
+  persist();
+  const original = '💾 Guardar';
+  btn.textContent = '✅ Guardado';
+  btn.disabled = true;
+  setTimeout(() => {
+    btn.textContent = original;
+    btn.disabled = false;
+  }, 1500);
 });
 
 document.getElementById('logoutBtn').addEventListener('click', () => {
