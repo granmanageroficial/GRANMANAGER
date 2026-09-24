@@ -2448,6 +2448,12 @@ document.getElementById('addScorerBtn').addEventListener('click', () => {
 
 function loadMatchIntoZone(id){
   activeMatchId = id;
+  // Salvavidas: si por lo que sea el flag "spinning" quedó trabado en true de un click anterior
+  // que falló a mitad de camino (por ejemplo, algún error inesperado entre que empieza a girar
+  // y termina la animación), el botón se quedaba sin reaccionar para siempre, en cualquier
+  // partido, hasta recargar toda la página. Al entrar a la pantalla de un partido siempre
+  // arrancamos con el flag limpio.
+  spinning = false;
   const m = state.matches.find(x=>x.id===id);
   if(!m) return;
   checkPreMatchConference(m);
@@ -4150,44 +4156,64 @@ document.getElementById('spinBtn').addEventListener('click', () => {
   spinning = true;
   document.getElementById('spinBtn').disabled = true;
 
-  // Evento fatal dedicado, totalmente aparte del sistema de niveles: 0.2% de probabilidad, muy bajo a propósito.
-  const dtDeathRoll = Math.random() < 0.002;
+  // Blindaje: si algo de acá para abajo tira un error inesperado (con datos de partida viejos,
+  // eventos recuperados de la nube, etc.), antes el flag "spinning" quedaba trabado en true para
+  // siempre y el botón dejaba de reaccionar en CUALQUIER partido hasta recargar la página entera,
+  // sin ningún aviso. Ahora se atrapa el error, se libera el flag y se avisa.
+  try{
+    // Evento fatal dedicado, totalmente aparte del sistema de niveles: 0.2% de probabilidad, muy bajo a propósito.
+    const dtDeathRoll = Math.random() < 0.002;
 
-  const tier = pickTier();
-  const range = angleRangeFor(tier);
-  const targetSliceAngle = range.start + (range.end-range.start)*(0.15+Math.random()*0.7);
-  const extraTurns = 5 + Math.floor(Math.random()*2);
-  // La rotación final (mod 360) tiene que dejar exactamente "targetSliceAngle" bajo el puntero,
-  // sin importar en qué ángulo haya quedado la rueda después de giros anteriores.
-  const desiredMod = ((360 - targetSliceAngle) % 360 + 360) % 360;
-  const base = currentRotation + extraTurns*360;
-  const diff = ((desiredMod - (base % 360)) % 360 + 360) % 360;
-  const finalRotation = base + diff;
-  canvas.style.transform = `rotate(${finalRotation}deg)`;
-  currentRotation = finalRotation;
+    const tier = pickTier();
+    const range = angleRangeFor(tier);
+    const targetSliceAngle = range.start + (range.end-range.start)*(0.15+Math.random()*0.7);
+    const extraTurns = 5 + Math.floor(Math.random()*2);
+    // La rotación final (mod 360) tiene que dejar exactamente "targetSliceAngle" bajo el puntero,
+    // sin importar en qué ángulo haya quedado la rueda después de giros anteriores.
+    const desiredMod = ((360 - targetSliceAngle) % 360 + 360) % 360;
+    const base = currentRotation + extraTurns*360;
+    const diff = ((desiredMod - (base % 360)) % 360 + 360) % 360;
+    const finalRotation = base + diff;
+    canvas.style.transform = `rotate(${finalRotation}deg)`;
+    currentRotation = finalRotation;
 
-  setTimeout(() => {
+    setTimeout(() => {
+      try{
+        spinning = false;
+        if(dtDeathRoll){
+          triggerDtDeath();
+          return;
+        }
+        const chosen = instantiateEvent(tier);
+        m.event = chosen;
+
+        if(chosen.selfPersonality) adjustStat('personality', chosen.selfPersonality);
+        if(chosen.matchesOut && chosen.playerId){
+          markPlayerOut(chosen.playerId, chosen.matchesOut, chosen.tag.toLowerCase());
+        }
+        if(chosen.matchesOut && chosen.playerIds){
+          chosen.playerIds.forEach(pid => markPlayerOut(pid, chosen.matchesOut, chosen.tag.toLowerCase()));
+        }
+
+        showResult(chosen, true);
+        document.getElementById('spinBtn').textContent = 'YA GIRADO PARA ESTE PARTIDO';
+        document.getElementById('matchResultForm').style.display = 'block';
+        showEventAlert(chosen);
+      }catch(e){
+        console.warn('Error al resolver el giro de la ruleta:', e);
+        spinning = false;
+        document.getElementById('spinBtn').disabled = false;
+        document.getElementById('spinBtn').textContent = 'GIRAR PARA ESTE PARTIDO';
+        alert('Hubo un problema al resolver el giro. Probá tocar "Girar" de nuevo; si sigue sin andar, recargá la página.');
+      }
+    }, 4600);
+  }catch(e){
+    console.warn('Error al iniciar el giro de la ruleta:', e);
     spinning = false;
-    if(dtDeathRoll){
-      triggerDtDeath();
-      return;
-    }
-    const chosen = instantiateEvent(tier);
-    m.event = chosen;
-
-    if(chosen.selfPersonality) adjustStat('personality', chosen.selfPersonality);
-    if(chosen.matchesOut && chosen.playerId){
-      markPlayerOut(chosen.playerId, chosen.matchesOut, chosen.tag.toLowerCase());
-    }
-    if(chosen.matchesOut && chosen.playerIds){
-      chosen.playerIds.forEach(pid => markPlayerOut(pid, chosen.matchesOut, chosen.tag.toLowerCase()));
-    }
-
-    showResult(chosen, true);
-    document.getElementById('spinBtn').textContent = 'YA GIRADO PARA ESTE PARTIDO';
-    document.getElementById('matchResultForm').style.display = 'block';
-    showEventAlert(chosen);
-  }, 4600);
+    document.getElementById('spinBtn').disabled = false;
+    document.getElementById('spinBtn').textContent = 'GIRAR PARA ESTE PARTIDO';
+    alert('Hubo un problema al iniciar el giro. Probá de nuevo; si sigue sin andar, recargá la página.');
+  }
 });
 
 // ------------------ ALERTA GRANDE DEL EVENTO (no navega ni hace scroll) ------------------
