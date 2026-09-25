@@ -651,7 +651,7 @@
     <div class="masthead">GRAN&nbsp;<span>MANAGER</span></div>
     <div style="text-align:right;">
       <div class="dateline" id="dateline"></div>
-      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build IDFIX-01</div>
+      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build EVENTFIX-02</div>
       <div class="dateline" id="userLine" style="margin-top:4px;">
         <span id="userLabel"></span><span id="frenzyBadge" style="display:none; color:var(--alert); font-weight:700;"> · 🔥 FRENÉTICO</span> · <button class="link-btn" id="manualSaveBtn" title="Forzar guardado de la partida">💾 Guardar</button> · <button class="link-btn" id="exportSaveBtn" title="Descargar una copia de seguridad como archivo">⬇️ Copia</button> · <button class="link-btn" id="importSaveBtn" title="Restaurar una copia de seguridad desde archivo">⬆️ Restaurar</button><input type="file" id="importSaveInput" accept="application/json" style="display:none;"> · <button class="link-btn" id="logoutBtn">Cerrar sesión</button>
       </div>
@@ -2715,7 +2715,7 @@ function addTimelineEntry(m){
     scorers: r.scorers,
     note: r.note,
     eventTag: m.event ? m.event.tag : null,
-    eventTitle: m.event ? m.event.title(m.event.playerName) : null
+    eventTitle: m.event ? evText(m.event.title, m.event.playerName) : null
   });
   renderTimeline();
 }
@@ -3232,7 +3232,7 @@ function showPressConference(playedMatch){
   if(playedMatch.event && playedMatch.event.tag !== 'SIN NOVEDAD'){
     const ev = playedMatch.event;
     const pid = ev.playerId || null;
-    const evTitle = ev.title(ev.playerName);
+    const evTitle = evText(ev.title, ev.playerName);
     if(ev.positive){
       const evName = ev.playerName || 'el plantel';
       pool.push({ text: pick(EVENT_IMPACT_POSITIVE_QUESTIONS)(evTitle), playerId: pid, options: eventImpactPositiveQuoteOptions(evName).map(o=>({...o, playerId:pid})) });
@@ -4179,9 +4179,6 @@ function instantiateEvent(tier){
 
 let spinning = false;
 document.getElementById('spinBtn').addEventListener('click', () => {
-  // --- DIAGNÓSTICO TEMPORAL Nº2: confirma primero que el click LLEGA a este handler, y después
-  // por qué rama pasa. Se saca en cuanto encontremos la causa real. ---
-  alert('DIAGNÓSTICO 2/2: el click SÍ llegó al botón. spinning=' + spinning + ' | activeMatchId=' + activeMatchId + ' | build=IDFIX-01');
   if(spinning || !activeMatchId) return;
   const m = state.matches.find(x=>x.id===activeMatchId);
   // Bug real: si el partido que se estaba viendo ya no existe en state.matches (por ejemplo,
@@ -4460,13 +4457,27 @@ function decideOutcomeFromAlert(key){
 }
 document.getElementById('alertCloseBtn').addEventListener('click', closeEventAlert);
 
+// Bug real (causa de fondo de "la ruleta se queda trabada"): un evento recién elegido tiene
+// title/body como FUNCIONES, pero JSON (localStorage y la nube) no puede guardar funciones —
+// se pierden en cuanto el partido se guarda y se vuelve a cargar. Si después se intenta volver
+// a mostrar ese resultado ya guardado llamando ev.title() como si fuera función, explota en
+// silencio (ya no es una función) y deja la pantalla a mitad de camino, sin ningún aviso. Esta
+// función acepta las dos formas: función (evento recién girado, misma sesión) o texto plano
+// (evento ya guardado y recargado).
+function evText(fnOrStr, ...args){
+  if(typeof fnOrStr === 'function') return fnOrStr(...args);
+  return fnOrStr != null ? fnOrStr : '';
+}
+
 function showResult(ev, addToHistory){
   const club = state.profile.club || 'el club';
   const tagEl = document.getElementById('resultTag');
   tagEl.textContent = `${ev.tierLabel ? ev.tierLabel.toUpperCase()+' · ' : ''}${ev.tag}`;
   tagEl.className = 'result-tag' + (ev.tagClass ? ' '+ev.tagClass : '');
-  document.getElementById('resultTitle').textContent = ev.title(ev.playerName);
-  document.getElementById('resultBody').textContent = ev.body(club, ev.playerName);
+  const titleText = evText(ev.title, ev.playerName);
+  const bodyText = evText(ev.body, club, ev.playerName);
+  document.getElementById('resultTitle').textContent = titleText;
+  document.getElementById('resultBody').textContent = bodyText;
   document.getElementById('resultCard').classList.add('show');
 
   const giBox = document.getElementById('resultGameInstruction');
@@ -4483,7 +4494,7 @@ function showResult(ev, addToHistory){
     const m = state.matches.find(x=>x.id===activeMatchId);
     state.eventHistory.unshift({
       matchId: m.id, rival: m.rival, date: m.date,
-      tag: ev.tag, title: ev.title(ev.playerName), body: ev.body(club, ev.playerName)
+      tag: ev.tag, title: titleText, body: bodyText
     });
     renderEventHistory();
     renderProfile();
