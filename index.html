@@ -651,7 +651,7 @@
     <div class="masthead">GRAN&nbsp;<span>MANAGER</span></div>
     <div style="text-align:right;">
       <div class="dateline" id="dateline"></div>
-      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build EVENTFIX-02</div>
+      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build DIAG-03</div>
       <div class="dateline" id="userLine" style="margin-top:4px;">
         <span id="userLabel"></span><span id="frenzyBadge" style="display:none; color:var(--alert); font-weight:700;"> · 🔥 FRENÉTICO</span> · <button class="link-btn" id="manualSaveBtn" title="Forzar guardado de la partida">💾 Guardar</button> · <button class="link-btn" id="exportSaveBtn" title="Descargar una copia de seguridad como archivo">⬇️ Copia</button> · <button class="link-btn" id="importSaveBtn" title="Restaurar una copia de seguridad desde archivo">⬆️ Restaurar</button><input type="file" id="importSaveInput" accept="application/json" style="display:none;"> · <button class="link-btn" id="logoutBtn">Cerrar sesión</button>
       </div>
@@ -1152,6 +1152,10 @@ const LEAGUE_DB = {
     competitions: ['Amistoso Internacional', 'Eliminatorias', 'Copa del Mundo', 'Copa Continental'],
     clubs: ['Argentina','Brasil','Francia','Alemania','España','Inglaterra','Italia','Portugal','Países Bajos','Bélgica','Uruguay','Croacia','México','Estados Unidos','Colombia','Chile','Japón','Corea del Sur','Marruecos','Senegal','Nigeria','Ghana','Egipto','Australia','Canadá','Suiza','Polonia','Ecuador','Perú','Paraguay']
   },
+  'Liga Profesional Saudí': {
+    competitions: ['Liga Profesional Saudí', 'Copa del Rey de Arabia Saudita', 'Supercopa de Arabia Saudita', 'Champions League Asiática'],
+    clubs: ['Al-Hilal','Al-Nassr','Al-Ittihad','Al-Ahli','Al-Shabab','Al-Taawoun','Al-Fateh','Al-Ettifaq','Al-Fayha','Al-Riyadh','Al-Khaleej','Al-Okhdood','Damac','Al-Kholood','Al-Qadsiah','Al-Hazem','Al-Wehda','Al-Raed']
+  },
 };
 
 // ------------------ CRITERIO DE RIVALES E IMPORTANCIA POR COMPETENCIA ------------------
@@ -1171,6 +1175,7 @@ const COMPETITION_SCOPE = {
   'Eliminatorias': () => LEAGUE_DB['Selecciones Nacionales'].clubs,
   'Copa del Mundo': () => LEAGUE_DB['Selecciones Nacionales'].clubs,
   'Copa Continental': () => LEAGUE_DB['Selecciones Nacionales'].clubs,
+  'Champions League Asiática': () => LEAGUE_DB['Liga Profesional Saudí'].clubs,
 };
 
 function rivalPoolFor(competition){
@@ -1179,7 +1184,7 @@ function rivalPoolFor(competition){
   return [];
 }
 
-const CUP_COMPETITIONS = new Set(['FA Cup','EFL Cup','Copa del Rey','Coppa Italia','DFB-Pokal','Copa de Francia','Copa Argentina','Champions League','Europa League','Conference League','Copa Libertadores','Copa Sudamericana','Concachampions','Leagues Cup','US Open Cup','Copa del Mundo','Copa Continental']);
+const CUP_COMPETITIONS = new Set(['FA Cup','EFL Cup','Copa del Rey','Coppa Italia','DFB-Pokal','Copa de Francia','Copa Argentina','Champions League','Europa League','Conference League','Copa Libertadores','Copa Sudamericana','Concachampions','Leagues Cup','US Open Cup','Copa del Mundo','Copa Continental','Copa del Rey de Arabia Saudita','Supercopa de Arabia Saudita','Champions League Asiática']);
 const FRIENDLY_COMPETITIONS = new Set(['Amistoso Internacional']);
 
 function competitionKind(comp){
@@ -4249,7 +4254,7 @@ document.getElementById('spinBtn').addEventListener('click', () => {
         spinning = false;
         document.getElementById('spinBtn').disabled = false;
         document.getElementById('spinBtn').textContent = 'GIRAR PARA ESTE PARTIDO';
-        alert('Hubo un problema al resolver el giro. Probá tocar "Girar" de nuevo; si sigue sin andar, recargá la página.');
+        alert('DIAGNÓSTICO 3 (resolver): ' + (e && e.message) + '\n' + (e && e.stack ? e.stack.split('\n').slice(0,4).join('\n') : ''));
       }
     }, 4600);
   }catch(e){
@@ -4257,7 +4262,7 @@ document.getElementById('spinBtn').addEventListener('click', () => {
     spinning = false;
     document.getElementById('spinBtn').disabled = false;
     document.getElementById('spinBtn').textContent = 'GIRAR PARA ESTE PARTIDO';
-    alert('Hubo un problema al iniciar el giro. Probá de nuevo; si sigue sin andar, recargá la página.');
+    alert('DIAGNÓSTICO 3 (iniciar): ' + (e && e.message) + '\n' + (e && e.stack ? e.stack.split('\n').slice(0,4).join('\n') : ''));
   }
 });
 
