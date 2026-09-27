@@ -609,6 +609,33 @@
   </div>
 </div>
 
+<div id="editMatchModal" class="modal-overlay" style="display:none;">
+  <div class="login-card event-alert-card">
+    <div class="checklist-title" style="margin-bottom:4px;">Editar partido</div>
+    <div class="dateline" style="margin-bottom:16px;">Corregí los datos de este partido (por ejemplo, si tenés que meter uno nuevo entre medio de los que ya tenías cargados, cargalo y después usá las flechas ▲▼ para ubicarlo en el orden correcto).</div>
+    <div class="f">
+      <label>Competencia</label>
+      <input id="editMatchComp" type="text" placeholder="Ej: Premier League" autocomplete="off">
+    </div>
+    <div class="f" style="margin-top:10px;">
+      <label>Rival</label>
+      <input id="editMatchRival" type="text" placeholder="Nombre del rival" autocomplete="off">
+    </div>
+    <div class="f" style="margin-top:10px;">
+      <label>Fecha</label>
+      <input id="editMatchDate" type="text" placeholder="Ej: 14 sep" autocomplete="off">
+    </div>
+    <div class="f" style="margin-top:10px;">
+      <label>Importancia / Fase</label>
+      <select id="editMatchImportance"></select>
+    </div>
+    <div style="display:flex; gap:10px; margin-top:20px;">
+      <button class="btn ghost" id="editMatchCancelBtn" style="flex:1;">Cancelar</button>
+      <button class="btn" id="editMatchConfirmBtn" style="flex:1;">Guardar cambios</button>
+    </div>
+  </div>
+</div>
+
 <div id="eventAlertModal" class="modal-overlay" style="display:none;">
   <div class="login-card event-alert-card" id="alertCard">
     <div class="result-tag" id="alertTag">SIN NOVEDAD</div>
@@ -651,7 +678,7 @@
     <div class="masthead">GRAN&nbsp;<span>MANAGER</span></div>
     <div style="text-align:right;">
       <div class="dateline" id="dateline"></div>
-      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build CLOUDFIX-04</div>
+      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build FEATURES-05</div>
       <div class="dateline" id="userLine" style="margin-top:4px;">
         <span id="userLabel"></span><span id="frenzyBadge" style="display:none; color:var(--alert); font-weight:700;"> · 🔥 FRENÉTICO</span> · <button class="link-btn" id="manualSaveBtn" title="Forzar guardado de la partida">💾 Guardar</button> · <button class="link-btn" id="exportSaveBtn" title="Descargar una copia de seguridad como archivo">⬇️ Copia</button> · <button class="link-btn" id="importSaveBtn" title="Restaurar una copia de seguridad desde archivo">⬆️ Restaurar</button><input type="file" id="importSaveInput" accept="application/json" style="display:none;"> · <button class="link-btn" id="logoutBtn">Cerrar sesión</button>
       </div>
@@ -813,6 +840,26 @@
     <div class="section-title">Situación actual del plantel</div>
     <div class="match-list" id="unavailableList"></div>
     <div id="unavailableEmpty" class="empty-note">Todo el plantel está disponible.</div>
+    <div class="card" style="margin-top:10px;">
+      <div class="field-row">
+        <div>
+          <label>Jugador</label>
+          <select id="injuryPlayerSelect"></select>
+        </div>
+        <div>
+          <label>Partidos que se pierde</label>
+          <input id="injuryMatches" type="text" inputmode="numeric" placeholder="Ej: 3" autocomplete="off">
+        </div>
+      </div>
+      <div class="field-row">
+        <div style="grid-column:1/-1;">
+          <label>Motivo (opcional)</label>
+          <input id="injuryReason" type="text" placeholder="Ej: rotura de ligamentos en el FC26/27" autocomplete="off">
+        </div>
+      </div>
+      <button class="btn ghost" id="addInjuryBtn" style="margin-top:6px;">🩹 Marcar como lesionado / de baja</button>
+      <div class="dateline" style="margin-top:8px;">Usalo cuando un jugador se lesiona jugando tu FC26/27 (no por la ruleta). Mientras esté de baja, no le va a poder tocar otro evento en la ruleta.</div>
+    </div>
   </section>
 
   <!-- OBJETIVOS Y PALMARÉS -->
@@ -1347,6 +1394,25 @@ function markPlayerOut(playerId, matchesOut, reason){
   const p = state.players.find(x=>x.id===playerId);
   if(p) p.status = matchesOut>0 ? `Baja (${reason})` : `Duda (${reason})`;
 }
+// Un jugador "de baja" (lesionado, sancionado, etc., matchesOut>0) no debería poder recibir OTRO
+// evento de la ruleta mientras ya está afuera de las canchas (no tiene sentido narrativo, y así
+// nunca queda con dos lesiones superpuestas). Se usa tanto para eventos disparados por la ruleta
+// como para la lesión cargada a mano en Plantilla cuando pasa dentro del FC26/27.
+function isPlayerOut(playerId){
+  const a = state.playerAvailability[playerId];
+  return !!(a && a.status === 'baja');
+}
+// Libera a un jugador de una baja/lesión antes de que se cumplan los partidos originalmente
+// asignados (por ejemplo, si se cargó mal la duración a mano). No se usa cuando el descuento es
+// automático partido a partido (eso lo hace tickAvailability).
+function clearPlayerAvailability(playerId){
+  delete state.playerAvailability[playerId];
+  const p = state.players.find(x=>x.id===playerId);
+  if(p) p.status = 'Disponible';
+  renderUnavailable();
+  renderPlayers();
+  persist();
+}
 function tickAvailability(){
   Object.keys(state.playerAvailability).forEach(id=>{
     const a = state.playerAvailability[id];
@@ -1451,11 +1517,20 @@ Object.keys(LEAGUE_DB).forEach(name => {
   leagueSelect.insertBefore(opt, leagueSelect.lastElementChild);
 });
 
+// Estas opciones son GENERALES para cualquier tipo de competencia (liga, copa doméstica,
+// copa internacional): antes solo existían instancias de semifinal/final en adelante, así que
+// una copa donde el objetivo real era "llegar a octavos" (ej: fase de grupos + octavos en una
+// Champions) no tenía ninguna opción que representara eso. Ahora figuran todas las instancias
+// de un torneo de eliminación directa, de fase de grupos a campeón, en el mismo desplegable
+// para todas las competencias por igual.
 const OBJECTIVE_OPTIONS = [
   'Ganar el título',
   'Clasificar a competencia internacional',
-  'Llegar a semifinales',
   'Llegar a la final',
+  'Llegar a semifinales',
+  'Llegar a cuartos de final',
+  'Llegar a octavos de final',
+  'Superar la fase de grupos',
   'Top 10',
   'Mantener la categoría',
   'Sin objetivo definido',
@@ -1886,6 +1961,18 @@ function objectiveProgress(objective, posStr){
     if(cupRank !== null) return cupRank <= 1 ? 'verde' : (cupRank <= 2 ? 'amarillo' : 'rojo');
     return 'amarillo';
   }
+  if(objective === 'Llegar a cuartos de final'){
+    if(cupRank !== null) return cupRank <= 3 ? 'verde' : (cupRank === 4 ? 'amarillo' : 'rojo');
+    return 'amarillo';
+  }
+  if(objective === 'Llegar a octavos de final'){
+    if(cupRank !== null) return cupRank <= 4 ? 'verde' : (cupRank === 5 ? 'amarillo' : 'rojo');
+    return 'amarillo';
+  }
+  if(objective === 'Superar la fase de grupos'){
+    if(cupRank !== null) return cupRank <= 4 ? 'verde' : (cupRank === 5 ? 'amarillo' : 'rojo');
+    return 'amarillo';
+  }
   if(objective === 'Top 10'){
     if(numPos !== null) return numPos <= 10 ? 'verde' : (numPos <= 13 ? 'amarillo' : 'rojo');
     return 'amarillo';
@@ -1949,6 +2036,7 @@ function estimatedReturnMatch(matchesOut){
 function renderUnavailable(){
   const list = document.getElementById('unavailableList');
   const empty = document.getElementById('unavailableEmpty');
+  populateInjuryPlayerSelect();
   const out = state.players.filter(pl => {
     const a = state.playerAvailability[pl.id];
     return a && (a.status === 'baja' || a.status === 'duda');
@@ -1977,10 +2065,41 @@ function renderUnavailable(){
         <div class="rival">${pl.name}</div>
         <div class="when">${detail}</div>
       </div>
-      <div class="status-tag" style="${a.status==='baja' ? 'color:var(--alert); border-color:var(--alert);' : 'color:var(--gold); border-color:var(--gold);'}">${a.status}</div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <div class="status-tag" style="${a.status==='baja' ? 'color:var(--alert); border-color:var(--alert);' : 'color:var(--gold); border-color:var(--gold);'}">${a.status}</div>
+        <button class="btn ghost small" type="button" onclick="clearPlayerAvailability(${pl.id})">✅ Disponible</button>
+      </div>
     </div>`;
   }).join('');
 }
+
+// ------------------ CARGAR LESIÓN A MANO (pasó jugando el FC26/27, no salió por la ruleta) ------------------
+function populateInjuryPlayerSelect(){
+  const sel = document.getElementById('injuryPlayerSelect');
+  if(!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = state.players.map(p => `<option value="${p.id}">${p.name}${isPlayerOut(p.id) ? ' (ya de baja)' : ''}</option>`).join('');
+  if(prev && state.players.some(p=>String(p.id)===prev)) sel.value = prev;
+}
+document.getElementById('addInjuryBtn').addEventListener('click', () => {
+  const sel = document.getElementById('injuryPlayerSelect');
+  const playerId = parseInt(sel.value, 10);
+  const player = state.players.find(p=>p.id===playerId);
+  if(!player){ alert('Elegí un jugador de la plantilla.'); return; }
+  const matchesRaw = document.getElementById('injuryMatches').value.trim();
+  const matchesOut = parseInt(matchesRaw, 10);
+  if(!matchesRaw || isNaN(matchesOut) || matchesOut <= 0){
+    alert('Ingresá cuántos partidos se pierde (un número mayor a 0).');
+    return;
+  }
+  const reason = document.getElementById('injuryReason').value.trim() || 'lesión cargada a mano';
+  markPlayerOut(playerId, matchesOut, reason);
+  document.getElementById('injuryMatches').value = '';
+  document.getElementById('injuryReason').value = '';
+  renderUnavailable();
+  renderPlayers();
+  persist();
+});
 
 // ------------------ SISTEMA DE ESTABILIDAD DEL ENTRENADOR ------------------
 // Rangos generales (0-100) usados para decidir el estado narrativo de cada relación:
@@ -2245,6 +2364,7 @@ document.getElementById('addPlayer').addEventListener('click', () => {
 function renderPlayers(){
   const list = document.getElementById('playersList');
   const empty = document.getElementById('playersEmpty');
+  populateInjuryPlayerSelect();
   if(state.players.length === 0){
     list.innerHTML = '';
     empty.style.display = 'block';
@@ -2439,7 +2559,7 @@ function renderMatches(){
   }
   empty.style.display = 'none';
   const firstPendingId = (state.matches.find(m=>m.status==='pendiente') || {}).id;
-  list.innerHTML = state.matches.map(m => {
+  list.innerHTML = state.matches.map((m, idx) => {
     const locked = m.status === 'pendiente' && m.id !== firstPendingId;
     const info = m.importance ? importanceInfo(m.comp, m.importance) : null;
     const showImportanceTag = info && info.value !== 'normal';
@@ -2449,12 +2569,69 @@ function renderMatches(){
         <div class="rival">vs ${m.rival}${showImportanceTag ? ` <span class="importance-tag">${info.label}</span>` : ''}</div>
         <div class="when">${m.date || 'fecha sin definir'}${m.comp ? ' · '+m.comp : ''}${m.result ? ' · Resultado: '+m.result.home+'–'+m.result.away : ''}</div>
       </div>
-      <div class="status-tag ${m.status}">${locked ? '🔒 bloqueado' : m.status}</div>
+      <div style="display:flex; align-items:center; gap:6px;" onclick="event.stopPropagation();">
+        <button class="btn ghost small" type="button" title="Mover antes en el calendario" onclick="moveMatch(${m.id}, -1)" ${idx===0?'disabled':''}>▲</button>
+        <button class="btn ghost small" type="button" title="Mover después en el calendario" onclick="moveMatch(${m.id}, 1)" ${idx===state.matches.length-1?'disabled':''}>▼</button>
+        <button class="btn ghost small" type="button" title="Editar partido" onclick="openEditMatch(${m.id})">✏️</button>
+        <div class="status-tag ${m.status}">${locked ? '🔒 bloqueado' : m.status}</div>
+      </div>
     </div>
   `;
   }).join('');
   persist();
 }
+
+// Mueve un partido una posición hacia atrás (-1) o hacia adelante (+1) en el orden del
+// calendario. Sirve para meter un partido que ya cargaste (por ej. porque clasificaste a una
+// copa) en el lugar que realmente le corresponde entre partidos que ya tenías cargados, ya que
+// solo el primer partido "pendiente" del array es jugable (el resto queda bloqueado).
+function moveMatch(id, dir){
+  const idx = state.matches.findIndex(x=>x.id===id);
+  if(idx === -1) return;
+  const newIdx = idx + dir;
+  if(newIdx < 0 || newIdx >= state.matches.length) return;
+  const [m] = state.matches.splice(idx, 1);
+  state.matches.splice(newIdx, 0, m);
+  renderMatches();
+  renderGameDate();
+  renderNextMatchBox();
+}
+
+let editingMatchId = null;
+function openEditMatch(id){
+  const m = state.matches.find(x=>x.id===id);
+  if(!m) return;
+  editingMatchId = id;
+  document.getElementById('editMatchComp').value = m.comp || '';
+  document.getElementById('editMatchRival').value = m.rival || '';
+  document.getElementById('editMatchDate').value = m.date || '';
+  const kind = m.comp ? competitionKind(m.comp) : 'liga';
+  const importanceSelect = document.getElementById('editMatchImportance');
+  importanceSelect.innerHTML = IMPORTANCE_OPTIONS[kind].map(o => `<option value="${o.value}" ${o.value===m.importance?'selected':''}>${o.label}</option>`).join('');
+  document.getElementById('editMatchModal').style.display = 'flex';
+}
+document.getElementById('editMatchCancelBtn').addEventListener('click', () => {
+  editingMatchId = null;
+  document.getElementById('editMatchModal').style.display = 'none';
+});
+document.getElementById('editMatchConfirmBtn').addEventListener('click', () => {
+  const m = state.matches.find(x=>x.id===editingMatchId);
+  if(!m){
+    document.getElementById('editMatchModal').style.display = 'none';
+    return;
+  }
+  const rival = document.getElementById('editMatchRival').value.trim();
+  if(!rival){ alert('Ingresá el nombre del rival.'); return; }
+  m.comp = document.getElementById('editMatchComp').value.trim();
+  m.rival = rival;
+  m.date = document.getElementById('editMatchDate').value.trim();
+  m.importance = document.getElementById('editMatchImportance').value;
+  editingMatchId = null;
+  document.getElementById('editMatchModal').style.display = 'none';
+  renderMatches();
+  renderGameDate();
+  renderNextMatchBox();
+});
 
 // ------------------ VISTA DE PARTIDO ------------------
 function renderScorerPicker(){
@@ -4142,19 +4319,27 @@ function instantiateEvent(tier){
   const tpl = pool[Math.floor(Math.random()*pool.length)];
   const ev = { ...tpl, tierId: tier.id, tierLabel: tier.label };
 
-  if(tpl.needsPlayer === 2 && state.players.length >= 2){
-    const shuffled = [...state.players].sort(()=>Math.random()-0.5);
+  // Un jugador que ya está de baja (lesionado, sancionado, etc.) queda afuera del pool para
+  // elegir protagonista de un evento nuevo: no tiene sentido narrativo que le "salga" un evento
+  // (y menos otra lesión) mientras ya está afuera de las canchas. Si por algún motivo TODO el
+  // plantel está de baja a la vez, se cae al plantel completo para no dejar la ruleta sin nadie
+  // a quien asignarle el evento.
+  const availablePlayers = state.players.filter(p => !isPlayerOut(p.id));
+  const playerPool = availablePlayers.length ? availablePlayers : state.players;
+
+  if(tpl.needsPlayer === 2 && playerPool.length >= 2){
+    const shuffled = [...playerPool].sort(()=>Math.random()-0.5);
     ev.playerIds = [shuffled[0].id, shuffled[1].id];
     ev.playerNames = [shuffled[0].name, shuffled[1].name];
     ev.playerName = `${shuffled[0].name} y ${shuffled[1].name}`;
-  } else if(tpl.needsPlayer && state.players.length){
+  } else if(tpl.needsPlayer && playerPool.length){
     let player;
     if(tpl.id === 'no_renueva'){
       // Los jugadores con más riesgo de irse tienen más chances de ser elegidos para este evento.
-      const weighted = state.players.flatMap(p => Array(1 + Math.round(getLeaveRisk(p.id)/10)).fill(p));
+      const weighted = playerPool.flatMap(p => Array(1 + Math.round(getLeaveRisk(p.id)/10)).fill(p));
       player = weighted[Math.floor(Math.random()*weighted.length)];
     } else {
-      player = state.players[Math.floor(Math.random()*state.players.length)];
+      player = playerPool[Math.floor(Math.random()*playerPool.length)];
     }
     ev.playerId = player.id;
     ev.playerName = player.name;
@@ -5067,9 +5252,11 @@ document.getElementById('seasonYear').addEventListener('change', () => {
 
 function competitionsForClose(){
   if(state.profile.competitions && state.profile.competitions.length){
-    // Las competencias marcadas como "no se disputa esta temporada" no piden evaluación de
-    // objetivo al cerrar la temporada (no tiene sentido preguntar si se cumplió algo que
-    // directamente no se jugó).
+    // Dos casos quedan afuera de la evaluación de fin de temporada, porque en ninguno de los
+    // dos tiene sentido calificar "cumplido" o "no cumplido": una competencia marcada como "no
+    // se disputa esta temporada" (directamente no se jugó) y una que quedó con "Sin objetivo
+    // definido" (nunca hubo una meta contra la cual medir el resultado). Ambas son neutras: no
+    // se les pregunta nada al cerrar la temporada y no mueven ninguna barra.
     const notPlayed = state.profile.competitionNotPlayed || {};
     return state.profile.competitions
       .filter(c => !notPlayed[c])
@@ -5077,9 +5264,12 @@ function competitionsForClose(){
         name: c,
         objective: state.profile.competitionObjectives[c] || 'Sin objetivo definido',
         priority: (state.profile.competitionPriority && state.profile.competitionPriority[c]) || 'medio',
-      }));
+      }))
+      .filter(c => c.objective !== 'Sin objetivo definido');
   }
-  return [{ name: 'General', objective: state.profile.goal || 'Sin objetivo definido', priority: 'medio' }];
+  const generalObjective = state.profile.goal || 'Sin objetivo definido';
+  if(generalObjective === 'Sin objetivo definido') return [];
+  return [{ name: 'General', objective: generalObjective, priority: 'medio' }];
 }
 
 const PRIORITY_LABELS = { obligatorio:'🔴 Obligatorio', medio:'🟡 Nivel medio', bajo:'🟢 Nivel bajo' };
@@ -5147,6 +5337,10 @@ function renderCloseSeasonRows(){
   const box = document.getElementById('closeSeasonRows');
   if(!box) return;
   const comps = competitionsForClose();
+  if(comps.length === 0){
+    box.innerHTML = `<div class="dateline">No hay objetivos que evaluar esta temporada (las competencias sin objetivo definido o marcadas como "no se disputa" no se evalúan ni afectan tus barras).</div>`;
+    return;
+  }
   const resolved = state.profile.competitionResolvedThisSeason || {};
   box.innerHTML = comps.map((c,i) => {
     if(resolved[c.name]){
@@ -5209,8 +5403,10 @@ function markObjectiveNow(comp){
 }
 
 document.getElementById('closeSeasonBtn').addEventListener('click', () => {
-  const comps = competitionsForClose();
-  if(comps.length === 0) return;
+  // Antes, si no había ninguna competencia para evaluar (por ejemplo, todas quedaron "Sin
+  // objetivo definido" o marcadas como "no se disputa"), el botón no hacía nada. Pero eso ya
+  // no es un caso raro: ahora es el estado normal de una competencia neutra, así que la
+  // temporada tiene que poder cerrarse (avanzar el año) igual, aunque no haya nada que evaluar.
   const titlesWonThisClose = [];
 
   document.querySelectorAll('.close-season-met').forEach(sel => {
