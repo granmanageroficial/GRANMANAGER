@@ -678,7 +678,7 @@
     <div class="masthead">GRAN&nbsp;<span>MANAGER</span></div>
     <div style="text-align:right;">
       <div class="dateline" id="dateline"></div>
-      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build FEATURES-05</div>
+      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build DELMATCH-06</div>
       <div class="dateline" id="userLine" style="margin-top:4px;">
         <span id="userLabel"></span><span id="frenzyBadge" style="display:none; color:var(--alert); font-weight:700;"> · 🔥 FRENÉTICO</span> · <button class="link-btn" id="manualSaveBtn" title="Forzar guardado de la partida">💾 Guardar</button> · <button class="link-btn" id="exportSaveBtn" title="Descargar una copia de seguridad como archivo">⬇️ Copia</button> · <button class="link-btn" id="importSaveBtn" title="Restaurar una copia de seguridad desde archivo">⬆️ Restaurar</button><input type="file" id="importSaveInput" accept="application/json" style="display:none;"> · <button class="link-btn" id="logoutBtn">Cerrar sesión</button>
       </div>
@@ -2573,12 +2573,35 @@ function renderMatches(){
         <button class="btn ghost small" type="button" title="Mover antes en el calendario" onclick="moveMatch(${m.id}, -1)" ${idx===0?'disabled':''}>▲</button>
         <button class="btn ghost small" type="button" title="Mover después en el calendario" onclick="moveMatch(${m.id}, 1)" ${idx===state.matches.length-1?'disabled':''}>▼</button>
         <button class="btn ghost small" type="button" title="Editar partido" onclick="openEditMatch(${m.id})">✏️</button>
+        <button class="btn ghost small" type="button" title="Eliminar partido" onclick="deleteMatch(${m.id})">🗑️</button>
         <div class="status-tag ${m.status}">${locked ? '🔒 bloqueado' : m.status}</div>
       </div>
     </div>
   `;
   }).join('');
   persist();
+}
+
+// Elimina un partido cargado por error. Pide confirmación siempre (es destructivo y no se puede
+// deshacer), avisando además si el partido ya tiene un evento de la ruleta o un resultado
+// cargado, para que no se borre por accidente algo que ya se jugó.
+function deleteMatch(id){
+  const idx = state.matches.findIndex(x=>x.id===id);
+  if(idx === -1) return;
+  const m = state.matches[idx];
+  const detalle = m.result
+    ? ' Ya tiene un resultado cargado: se va a perder.'
+    : (m.event ? ' Ya tiene un evento de la ruleta cargado: se va a perder.' : '');
+  if(!confirm(`¿Eliminar el partido vs ${m.rival}${m.date ? ' ('+m.date+')' : ''} del calendario?${detalle}`)) return;
+  state.matches.splice(idx, 1);
+  if(activeMatchId === id){
+    activeMatchId = null;
+    closeMatchView();
+  }
+  renderMatches();
+  renderGameDate();
+  renderNextMatchBox();
+  renderOnboardingChecklist();
 }
 
 // Mueve un partido una posición hacia atrás (-1) o hacia adelante (+1) en el orden del
