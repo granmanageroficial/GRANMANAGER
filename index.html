@@ -651,7 +651,7 @@
     <div class="masthead">GRAN&nbsp;<span>MANAGER</span></div>
     <div style="text-align:right;">
       <div class="dateline" id="dateline"></div>
-      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build DIAG-03</div>
+      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build CLOUDFIX-04</div>
       <div class="dateline" id="userLine" style="margin-top:4px;">
         <span id="userLabel"></span><span id="frenzyBadge" style="display:none; color:var(--alert); font-weight:700;"> · 🔥 FRENÉTICO</span> · <button class="link-btn" id="manualSaveBtn" title="Forzar guardado de la partida">💾 Guardar</button> · <button class="link-btn" id="exportSaveBtn" title="Descargar una copia de seguridad como archivo">⬇️ Copia</button> · <button class="link-btn" id="importSaveBtn" title="Restaurar una copia de seguridad desde archivo">⬆️ Restaurar</button><input type="file" id="importSaveInput" accept="application/json" style="display:none;"> · <button class="link-btn" id="logoutBtn">Cerrar sesión</button>
       </div>
@@ -4184,7 +4184,7 @@ function instantiateEvent(tier){
 
 let spinning = false;
 document.getElementById('spinBtn').addEventListener('click', () => {
-  if(spinning || !activeMatchId) return;
+  if(spinning || activeMatchId === null || activeMatchId === undefined) return;
   const m = state.matches.find(x=>x.id===activeMatchId);
   // Bug real: si el partido que se estaba viendo ya no existe en state.matches (por ejemplo,
   // porque se volvió a cargar una partida guardada más vieja mientras esta pantalla seguía
@@ -4254,7 +4254,7 @@ document.getElementById('spinBtn').addEventListener('click', () => {
         spinning = false;
         document.getElementById('spinBtn').disabled = false;
         document.getElementById('spinBtn').textContent = 'GIRAR PARA ESTE PARTIDO';
-        alert('DIAGNÓSTICO 3 (resolver): ' + (e && e.message) + '\n' + (e && e.stack ? e.stack.split('\n').slice(0,4).join('\n') : ''));
+        alert('Hubo un problema al resolver el giro. Probá tocar "Girar" de nuevo; si sigue sin andar, recargá la página.');
       }
     }, 4600);
   }catch(e){
@@ -4262,7 +4262,7 @@ document.getElementById('spinBtn').addEventListener('click', () => {
     spinning = false;
     document.getElementById('spinBtn').disabled = false;
     document.getElementById('spinBtn').textContent = 'GIRAR PARA ESTE PARTIDO';
-    alert('DIAGNÓSTICO 3 (iniciar): ' + (e && e.message) + '\n' + (e && e.stack ? e.stack.split('\n').slice(0,4).join('\n') : ''));
+    alert('Hubo un problema al iniciar el giro. Probá de nuevo; si sigue sin andar, recargá la página.');
   }
 });
 
@@ -5558,9 +5558,30 @@ function showCloudSyncBanner(show){
 function persistToCloud(){
   if(!currentUser || !cloudDb) return;
   const payload = { pin: currentPin, nextId, state, savedAt: Date.now() };
-  cloudDb.ref('saves/' + cloudKeyFor(currentUser)).set(payload)
-    .then(() => showCloudSyncBanner(false))
-    .catch((e) => { console.warn('No se pudo sincronizar con la nube:', e); showCloudSyncBanner(true); });
+  // Bug real (causa de fondo de "la ruleta se traba después de girar"): un evento recién elegido
+  // trae title/body como FUNCIONES. localStorage las descarta en silencio al pasar por
+  // JSON.stringify, pero Firebase Realtime Database es más estricto: si detecta una función en
+  // CUALQUIER parte del objeto, .set() tira una excepción SÍNCRONA en vez de solo rechazar la
+  // promesa. Esa excepción se colaba hacia arriba en medio del guardado automático que dispara
+  // showResult() apenas termina de girar, rompiendo toda la secuencia. Se sanea el payload con la
+  // misma vuelta por JSON que ya usa el guardado local (que también limpia funciones) antes de
+  // mandarlo a la nube, y además se envuelve el .set() en try/catch por las dudas.
+  let safePayload;
+  try{
+    safePayload = JSON.parse(JSON.stringify(payload));
+  }catch(e){
+    console.warn('No se pudo preparar el guardado en la nube:', e);
+    showCloudSyncBanner(true);
+    return;
+  }
+  try{
+    cloudDb.ref('saves/' + cloudKeyFor(currentUser)).set(safePayload)
+      .then(() => showCloudSyncBanner(false))
+      .catch((e) => { console.warn('No se pudo sincronizar con la nube:', e); showCloudSyncBanner(true); });
+  }catch(e){
+    console.warn('No se pudo sincronizar con la nube:', e);
+    showCloudSyncBanner(true);
+  }
 }
 
 // Trae la partida guardada en la nube para un usuario, con un timeout corto para no colgar el
