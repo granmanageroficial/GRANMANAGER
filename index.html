@@ -685,7 +685,7 @@
     <div class="masthead">GRAN&nbsp;<span>MANAGER</span></div>
     <div style="text-align:right;">
       <div class="dateline" id="dateline"></div>
-      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build NOWIPE-09</div>
+      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build INJURYUI-10</div>
       <div class="dateline" id="userLine" style="margin-top:4px;">
         <span id="userLabel"></span><span id="frenzyBadge" style="display:none; color:var(--alert); font-weight:700;"> · 🔥 FRENÉTICO</span> · <button class="link-btn" id="manualSaveBtn" title="Forzar guardado de la partida">💾 Guardar</button> · <button class="link-btn" id="exportSaveBtn" title="Descargar una copia de seguridad como archivo">⬇️ Copia</button> · <button class="link-btn" id="importSaveBtn" title="Restaurar una copia de seguridad desde archivo">⬆️ Restaurar</button><input type="file" id="importSaveInput" accept="application/json" style="display:none;"> · <button class="link-btn" id="logoutBtn">Cerrar sesión</button>
       </div>
@@ -844,29 +844,6 @@
     </div>
     <div class="match-list" id="standingsList"></div>
 
-    <div class="section-title">Situación actual del plantel</div>
-    <div class="match-list" id="unavailableList"></div>
-    <div id="unavailableEmpty" class="empty-note">Todo el plantel está disponible.</div>
-    <div class="card" style="margin-top:10px;">
-      <div class="field-row">
-        <div>
-          <label>Jugador</label>
-          <select id="injuryPlayerSelect"></select>
-        </div>
-        <div>
-          <label>Partidos que se pierde</label>
-          <input id="injuryMatches" type="text" inputmode="numeric" placeholder="Ej: 3" autocomplete="off">
-        </div>
-      </div>
-      <div class="field-row">
-        <div style="grid-column:1/-1;">
-          <label>Motivo (opcional)</label>
-          <input id="injuryReason" type="text" placeholder="Ej: rotura de ligamentos en el FC26/27" autocomplete="off">
-        </div>
-      </div>
-      <button class="btn ghost" id="addInjuryBtn" style="margin-top:6px;">🩹 Marcar como lesionado / de baja</button>
-      <div class="dateline" style="margin-top:8px;">Usalo cuando un jugador se lesiona jugando tu FC26/27 (no por la ruleta). Mientras esté de baja, no le va a poder tocar otro evento en la ruleta.</div>
-    </div>
   </section>
 
   <!-- OBJETIVOS Y PALMARÉS -->
@@ -1020,6 +997,35 @@
     <div id="playersList"></div>
     <div id="playersEmpty" class="empty-note">Todavía no cargaste jugadores.</div>
 
+    <div class="card" style="border-color:var(--alert); margin:14px 0;">
+      <span style="color:var(--alert); font-family:'Barlow Condensed', sans-serif; font-weight:700; font-size:15px;">⚠ En caso de tener un jugador lesionado o de baja en tu FC26/27, colocalo acá</span>
+    </div>
+
+    <div class="section-title">Situación actual del plantel</div>
+    <div class="match-list" id="unavailableList"></div>
+    <div id="unavailableEmpty" class="empty-note">Todo el plantel está disponible.</div>
+    <div class="card" style="margin-top:10px;">
+      <div class="field-row">
+        <div>
+          <label>Jugador</label>
+          <select id="injuryPlayerSelect"></select>
+        </div>
+        <div>
+          <label>Partidos que se pierde</label>
+          <input id="injuryMatches" type="text" inputmode="numeric" placeholder="Ej: 3" autocomplete="off">
+        </div>
+      </div>
+      <div class="field-row">
+        <div style="grid-column:1/-1;">
+          <label>Motivo (opcional)</label>
+          <input id="injuryReason" type="text" placeholder="Ej: rotura de ligamentos en el FC26/27" autocomplete="off">
+        </div>
+      </div>
+      <button class="btn ghost" id="addInjuryBtn" style="margin-top:6px;">🩹 Marcar como lesionado / de baja</button>
+      <div class="dateline" style="margin-top:8px;">Usalo cuando un jugador se lesiona jugando tu FC26/27 (no por la ruleta). Mientras esté de baja, no le va a poder tocar otro evento en la ruleta.</div>
+    </div>
+
+    <div class="section-title">Agregar jugador</div>
     <div class="add-form">
       <div class="f"><label>Nombre</label><input id="pName" type="text" autocomplete="off"></div>
       <div class="f">
