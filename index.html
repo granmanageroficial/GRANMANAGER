@@ -685,7 +685,7 @@
     <div class="masthead">GRAN&nbsp;<span>MANAGER</span></div>
     <div style="text-align:right;">
       <div class="dateline" id="dateline"></div>
-      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build NOCACHE-08</div>
+      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build NOWIPE-09</div>
       <div class="dateline" id="userLine" style="margin-top:4px;">
         <span id="userLabel"></span><span id="frenzyBadge" style="display:none; color:var(--alert); font-weight:700;"> · 🔥 FRENÉTICO</span> · <button class="link-btn" id="manualSaveBtn" title="Forzar guardado de la partida">💾 Guardar</button> · <button class="link-btn" id="exportSaveBtn" title="Descargar una copia de seguridad como archivo">⬇️ Copia</button> · <button class="link-btn" id="importSaveBtn" title="Restaurar una copia de seguridad desde archivo">⬆️ Restaurar</button><input type="file" id="importSaveInput" accept="application/json" style="display:none;"> · <button class="link-btn" id="logoutBtn">Cerrar sesión</button>
       </div>
@@ -2375,7 +2375,11 @@ function renderPlayers(){
   if(state.players.length === 0){
     list.innerHTML = '';
     empty.style.display = 'block';
-    persist();
+    // Antes se llamaba a persist() acá, lo que significaba que CUALQUIER render con la lista
+    // vacía (incluso uno transitorio, por ejemplo justo antes de que termine de aplicarse una
+    // partida traída de la nube) disparaba un guardado automático que podía pisar una partida
+    // real con jugadores por una versión vacía. Dibujar la lista nunca debería, por sí solo,
+    // escribir nada; el guardado ocurre en respuesta a acciones reales del usuario.
     return;
   }
   empty.style.display = 'none';
@@ -5858,13 +5862,22 @@ function persistToCloud(){
 }
 
 // Trae la partida guardada en la nube para un usuario, con un timeout corto para no colgar el
-// login si no hay conexión: en ese caso simplemente se sigue con lo que haya en localStorage.
+// login si no hay conexión.
+//
+// Bug real (grave, causa de fondo de "entré y no tenía mi plantel"): esta función devolvía
+// `null` tanto si la nube respondía "no hay nada guardado para este usuario" COMO si el pedido
+// simplemente fallaba o se pasaba de los 6 segundos de timeout (corte de red, dispositivo lento,
+// etc.). El login no podía distinguir esos dos casos y, al recibir `null`, asumía "usuario
+// nuevo" y arrancaba una cuenta en blanco con ese mismo nombre — arriesgando pisar la partida
+// real en la nube en el próximo guardado automático, aunque esa partida siguiera intacta ahí.
+// Ahora se devuelve un objeto con `ok:false` cuando no se pudo confirmar nada (falla o timeout),
+// distinto de `ok:true, data:null` (la nube sí respondió y confirmó que no hay nada guardado).
 function fetchCloudSave(user){
-  if(!cloudDb) return Promise.resolve(null);
+  if(!cloudDb) return Promise.resolve({ ok:true, data:null });
   return Promise.race([
-    cloudDb.ref('saves/' + cloudKeyFor(user)).once('value').then(snap => snap.val()),
-    new Promise(resolve => setTimeout(() => resolve(null), 6000))
-  ]).catch((e) => { console.warn('No se pudo consultar la nube:', e); return null; });
+    cloudDb.ref('saves/' + cloudKeyFor(user)).once('value').then(snap => ({ ok:true, data: snap.val() })),
+    new Promise(resolve => setTimeout(() => resolve({ ok:false, data:null }), 6000))
+  ]).catch((e) => { console.warn('No se pudo consultar la nube:', e); return { ok:false, data:null }; });
 }
 
 // ------------------ PERSISTENCIA (localStorage) ------------------
@@ -6061,7 +6074,21 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
   // Consultamos la nube: si este dispositivo no tiene nada local (o tiene una versión vieja),
   // pero la nube sí tiene guardado algo, usamos eso — es justamente lo que evita el bug de
   // "entré y no tenía nada" cuando el navegador perdió sus datos locales.
-  const cloudSaved = await fetchCloudSave(user);
+  const cloudResult = await fetchCloudSave(user);
+  const cloudSaved = cloudResult.data;
+
+  // Bug real y grave (causa de fondo de "entré y mi plantel estaba vacío"): si este dispositivo
+  // no tiene guardado local Y la consulta a la nube no se pudo confirmar (corte de red, timeout),
+  // antes se seguía igual y, al no encontrar "nada", se arrancaba una cuenta NUEVA en blanco con
+  // el mismo usuario — arriesgando pisar en el próximo guardado la partida real que seguía sana
+  // en la nube. Ahora, en ese caso puntual, se frena el login con un aviso en vez de asumir
+  // silenciosamente que la cuenta es nueva.
+  if(!localSaved && !cloudResult.ok){
+    loginBtn.disabled = false;
+    loginBtn.textContent = originalLabel;
+    msg.textContent = 'No pudimos confirmar si ya tenías una partida guardada en la nube (revisá tu conexión). Por las dudas no seguimos, para no arriesgar pisar tus datos. Probá de nuevo en unos segundos.';
+    return;
+  }
 
   let saved = localSaved;
   if(cloudSaved && (!localSaved || (cloudSaved.savedAt||0) >= (localSaved.savedAt||0))){
