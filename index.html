@@ -685,7 +685,7 @@
     <div class="masthead">GRAN&nbsp;<span>MANAGER</span></div>
     <div style="text-align:right;">
       <div class="dateline" id="dateline"></div>
-      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build INJURYUI-10</div>
+      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build STABFIX-11</div>
       <div class="dateline" id="userLine" style="margin-top:4px;">
         <span id="userLabel"></span><span id="frenzyBadge" style="display:none; color:var(--alert); font-weight:700;"> · 🔥 FRENÉTICO</span> · <button class="link-btn" id="manualSaveBtn" title="Forzar guardado de la partida">💾 Guardar</button> · <button class="link-btn" id="exportSaveBtn" title="Descargar una copia de seguridad como archivo">⬇️ Copia</button> · <button class="link-btn" id="importSaveBtn" title="Restaurar una copia de seguridad desde archivo">⬆️ Restaurar</button><input type="file" id="importSaveInput" accept="application/json" style="display:none;"> · <button class="link-btn" id="logoutBtn">Cerrar sesión</button>
       </div>
@@ -1457,6 +1457,22 @@ function allocateId(){
   state.matches.forEach(m => { if(typeof m.id === 'number' && m.id > maxUsed) maxUsed = m.id; });
   nextId = Math.max(nextId, maxUsed + 1);
   return nextId++;
+}
+
+// Repara partidas viejas a las que les falte algún campo puntual DENTRO de coachStability (no
+// el objeto entero). Bug real: al login solo se chequeaba "si no existe state.coachStability,
+// crealo entero" -- pero una cuenta vieja creada ANTES de que se agregara warnFlags a ese objeto
+// sí tenía coachStability (con cooldown/threatWarned/pressureFlags), así que ese chequeo no
+// disparaba, y warnFlags quedaba undefined. Cualquier evento de personalidad marginal
+// (`cs.warnFlags[flagKey] = ...`) tiraba una excepción sin capturar en medio del giro de la
+// ruleta. Se repara cada subcampo por separado, sin pisar los que ya existen.
+function repairCoachStability(){
+  if(!state.coachStability) state.coachStability = {};
+  const cs = state.coachStability;
+  if(cs.cooldown === undefined) cs.cooldown = 0;
+  if(cs.threatWarned === undefined) cs.threatWarned = false;
+  if(!cs.pressureFlags) cs.pressureFlags = {};
+  if(!cs.warnFlags) cs.warnFlags = {};
 }
 
 // Repara partidas ya guardadas que hayan quedado con dos jugadores o dos partidos compartiendo
@@ -5971,7 +5987,7 @@ document.getElementById('importSaveInput').addEventListener('change', (e) => {
     if(!state.profile.competitionResolvedThisSeason) state.profile.competitionResolvedThisSeason = {};
     if(!state.timeline) state.timeline = [];
     if(!state.financeCrisis) state.financeCrisis = { active: null, strikes: 0 };
-    if(!state.coachStability) state.coachStability = { cooldown:0, threatWarned:false, pressureFlags:{}, warnFlags:{} };
+    repairCoachStability();
     if(!state.stintStats) state.stintStats = { played:0, won:0, drawn:0, lost:0, seasons:0, titles:0 };
     if(!state.pendingFutureEvents) state.pendingFutureEvents = [];
     repairDuplicateIds();
@@ -6025,7 +6041,7 @@ function startApp(user, pin, loadedData){
     if(!state.profile.competitionResolvedThisSeason) state.profile.competitionResolvedThisSeason = {};
     if(!state.timeline) state.timeline = [];
     if(!state.financeCrisis) state.financeCrisis = { active: null, strikes: 0 };
-    if(!state.coachStability) state.coachStability = { cooldown:0, threatWarned:false, pressureFlags:{}, warnFlags:{} };
+    repairCoachStability();
     if(state.consecutiveLosses === undefined) state.consecutiveLosses = 0;
     if(!state.stintStats) state.stintStats = { played:0, won:0, drawn:0, lost:0, seasons:0, titles:0 };
     if(!state.pendingFutureEvents) state.pendingFutureEvents = [];
