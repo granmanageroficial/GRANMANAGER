@@ -815,10 +815,14 @@
     </div>
 
     <div class="section-title">Estadísticas</div>
+    <div class="dateline" style="margin-bottom:6px;">Club actual: <strong id="statsClubValue" style="color:var(--ink);">—</strong></div>
     <div class="rep-row">
       <div class="rep-item"><span class="num" id="repValue">50</span><span class="lbl">Reputación</span></div>
       <div class="rep-item"><span class="num" id="playedValue">0</span><span class="lbl">Partidos jugados</span></div>
       <div class="rep-item"><span class="num" id="wonValue">0</span><span class="lbl">Ganados</span></div>
+      <div class="rep-item"><span class="num" id="drawnValue">0</span><span class="lbl">Empatados</span></div>
+      <div class="rep-item"><span class="num" id="lostValue">0</span><span class="lbl">Perdidos</span></div>
+      <div class="rep-item"><span class="num" id="unbeatenValue">0</span><span class="lbl">Máximo invicto</span></div>
       <div class="rep-item"><span class="num" id="eventsValue">0</span><span class="lbl">Eventos registrados</span></div>
     </div>
 
@@ -889,10 +893,14 @@
     </div>
 
     <div class="section-title">Historial de objetivos por temporada</div>
-    <!-- Pedido del usuario: acá se registra CUALQUIER objetivo cerrado (cumplido o no, sea
-    título, semifinales, etc.), así que a propósito NO se llama "Palmarés" -- el palmarés real
-    (solo títulos ganados) está en "🏆 Vitrina de títulos", en Perfil del DT, que ya filtra
-    únicamente objetivo === 'Ganar el título' con met:true. -->
+    <!-- Esta sección se había sacado por pedido del usuario, pero volvió a pedido del usuario
+    después de encontrar registros fantasma (títulos/objetivos que nunca se cumplieron de
+    verdad, generados por el bug de "Cerrar temporada" ya corregido más arriba): acá se puede
+    revisar, editar y ELIMINAR cualquier registro para corregir datos que hayan quedado mal por
+    algún bug, sin tener que perder el resto de la partida. No se llama "Palmarés" a propósito:
+    acá se anota CUALQUIER objetivo cerrado (cumplido o no), no solo títulos -- el palmarés real
+    sigue siendo "🏆 Vitrina de títulos" en Perfil del DT, que ya cuenta solo los títulos de
+    verdad. -->
     <div class="match-list" id="trophyList"></div>
     <div id="trophyEmpty" class="empty-note">Todavía no se cerró ninguna temporada.</div>
   </section>
@@ -1112,6 +1120,12 @@
     </div>
 
     <div class="section-title">Próximos partidos</div>
+    <!-- Pedido del usuario: con muchos partidos cargados, había que scrollear hasta el final de
+    todo para encontrar cuál seguía, porque la lista era un único bloque en orden de carga. Ahora
+    renderMatches() la separa en dos secciones (por jugar arriba, jugados abajo, más reciente
+    primero) directamente en el HTML que arma acá adentro. También se aclara de qué club es la
+    lista, para que quede claro que un cambio de club arranca el calendario de cero. -->
+    <div class="dateline" id="matchListClubLabel" style="margin-bottom:10px;"></div>
     <div class="match-list" id="matchList"></div>
     <div id="matchesEmpty" class="empty-note">Todavía no cargaste partidos.</div>
 
@@ -1218,7 +1232,7 @@
 // una esquina fija de la pantalla (#buildBadge) además de en el header de adentro del juego
 // (#headerBuildLine), para poder confirmar sin dudas si dos dispositivos están corriendo el
 // mismo archivo. Para la próxima entrega, alcanza con cambiar este único string.
-const BUILD_ID = 'RULEBATCH-13';
+const BUILD_ID = 'RULEBATCH-18';
 document.getElementById('buildBadge').textContent = BUILD_ID;
 const headerBuildLineEl = document.getElementById('headerBuildLine');
 if(headerBuildLineEl) headerBuildLineEl.textContent = `build ${BUILD_ID}`;
@@ -1675,7 +1689,13 @@ function renderObjectivesByComp(competitions){
     <div class="card" style="margin-bottom:10px; padding:14px 16px; ${isNotPlayed ? 'opacity:0.65;' : ''}">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:${isNotPlayed?'6px':'12px'};">
         <div style="font-weight:700; font-size:16px;">${c}</div>
-        <label style="display:flex; align-items:center; gap:6px; min-width:auto; font-weight:400; opacity:0.85; margin:0;">
+        <!-- Bug real de layout: sin "white-space:nowrap" ni "flex-shrink:0", cuando no entraban
+        el nombre de la competencia y este texto en la misma línea, flexbox achicaba este label
+        hasta el ancho de la palabra más larga en vez de mandarlo entero a la línea de abajo,
+        partiendo "No se disputa esta temporada" en una columna angosta de una palabra por
+        renglón que quedaba pegada fuera de la tarjeta. Ahora el label nunca parte su propio
+        texto: si no entra al lado del nombre, baja entero (gracias al flex-wrap del contenedor). -->
+        <label style="display:flex; align-items:center; gap:6px; flex-shrink:0; white-space:nowrap; font-weight:400; opacity:0.85; margin:0; font-size:13px;">
           <input type="checkbox" class="comp-notplayed-check" data-comp="${c}" ${isNotPlayed?'checked':''} onchange="toggleCompNotPlayed('${compEscaped}', this.checked)">
           No se disputa esta temporada
         </label>
@@ -1900,8 +1920,17 @@ function renderProfile(){
     ? `Temporada ${p.year || '—'}`
     : 'Cargá los datos del perfil para empezar.';
   document.getElementById('repValue').textContent = state.reputation;
-  document.getElementById('playedValue').textContent = state.matches.filter(m=>m.status==='jugado').length;
-  document.getElementById('wonValue').textContent = state.matches.filter(m=>m.result && m.result.home > m.result.away).length;
+  document.getElementById('statsClubValue').textContent = p.club || '—';
+  // Pedido del usuario: ganados/empatados/perdidos y máximo invicto, a la vista. Se usan los
+  // contadores de state.stintStats (no un recuento de state.matches por marcador) porque son los
+  // que ya llevan bien la cuenta de un resultado definido por penales (ver PENALTY_ELIGIBLE_...):
+  // un 0-0 ganado por penales cuenta como ganado ahí, pero un simple "home > away" lo contaría
+  // como empate.
+  document.getElementById('playedValue').textContent = state.stintStats.played;
+  document.getElementById('wonValue').textContent = state.stintStats.won;
+  document.getElementById('drawnValue').textContent = state.stintStats.drawn;
+  document.getElementById('lostValue').textContent = state.stintStats.lost;
+  document.getElementById('unbeatenValue').textContent = computeMaxUnbeatenStreak();
   document.getElementById('eventsValue').textContent = state.eventHistory.length;
 
   document.getElementById('personalityValue').textContent = state.stats.personality;
@@ -2693,9 +2722,44 @@ document.getElementById('addMatch').addEventListener('click', () => {
   renderNextMatchBox();
 });
 
+// Arma el HTML de UNA fila de partido. `idxInGroup`/`groupLength` son la posición DENTRO de su
+// propia sección (por jugar / jugados), no la posición cruda en state.matches -- así las flechas
+// ▲▼ se deshabilitan según el principio/final de SU sección, que es lo que se ve en pantalla.
+// `dirMultiplier` es 1 para una sección mostrada en el mismo orden que state.matches (por jugar),
+// y -1 para una sección mostrada AL REVÉS (jugados, más reciente primero): sin este ajuste, "▲"
+// en la lista de jugados movería el partido para el lado contrario al que se ve en pantalla.
+function matchRowHtml(m, idxInGroup, groupLength, locked, dirMultiplier){
+  const info = m.importance ? importanceInfo(m.comp, m.importance) : null;
+  const showImportanceTag = info && info.value !== 'normal';
+  return `
+    <div class="match-row ${locked ? 'locked' : ''}" ${locked ? '' : `onclick="openMatchFromCalendar(${m.id})"`}>
+      <div class="left">
+        <div class="rival">vs ${m.rival}${showImportanceTag ? ` <span class="importance-tag">${info.label}</span>` : ''}</div>
+        <div class="when">${m.date || 'fecha sin definir'}${m.comp ? ' · '+m.comp : ''}${m.result ? ' · Resultado: '+m.result.home+'–'+m.result.away : ''}</div>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px;" onclick="event.stopPropagation();">
+        <button class="btn ghost small" type="button" title="Mover antes en su sección" onclick="moveMatch(${m.id}, ${-1*dirMultiplier})" ${idxInGroup===0?'disabled':''}>▲</button>
+        <button class="btn ghost small" type="button" title="Mover después en su sección" onclick="moveMatch(${m.id}, ${1*dirMultiplier})" ${idxInGroup===groupLength-1?'disabled':''}>▼</button>
+        <button class="btn ghost small" type="button" title="Editar partido" onclick="openEditMatch(${m.id})">✏️</button>
+        <button class="btn ghost small" type="button" title="Eliminar partido" onclick="deleteMatch(${m.id})">🗑️</button>
+        <div class="status-tag ${m.status}">${locked ? '🔒 bloqueado' : m.status}</div>
+      </div>
+    </div>
+  `;
+}
+
+// Pedido del usuario: "que los partidos por jugar figuren arriba del todo... sino cuando tenga
+// 200 partidos me vuelvo loco". Antes era una sola lista en el orden en que se habían cargado,
+// así que con una temporada larga el próximo partido podía terminar enterrado después de decenas
+// de partidos ya jugados. Ahora se separa en dos secciones: "Por jugar" arriba (en su orden real
+// de calendario) y "Jugados" abajo, con el más reciente primero para encontrar un resultado sin
+// scrollear hasta el fondo. También se aclara de qué club es esta lista (el calendario arranca de
+// cero en cada cambio de club, ver changeClubBtn).
 function renderMatches(){
   const list = document.getElementById('matchList');
   const empty = document.getElementById('matchesEmpty');
+  const clubLabel = document.getElementById('matchListClubLabel');
+  if(clubLabel) clubLabel.textContent = `Partidos de ${state.profile.club || 'tu club actual'} — si cambiás de club, este calendario arranca de cero.`;
   if(state.matches.length === 0){
     list.innerHTML = '';
     empty.style.display = 'block';
@@ -2704,26 +2768,19 @@ function renderMatches(){
   }
   empty.style.display = 'none';
   const firstPendingId = (state.matches.find(m=>m.status==='pendiente') || {}).id;
-  list.innerHTML = state.matches.map((m, idx) => {
-    const locked = m.status === 'pendiente' && m.id !== firstPendingId;
-    const info = m.importance ? importanceInfo(m.comp, m.importance) : null;
-    const showImportanceTag = info && info.value !== 'normal';
-    return `
-    <div class="match-row ${locked ? 'locked' : ''}" ${locked ? '' : `onclick="openMatch(${m.id})"`}>
-      <div class="left">
-        <div class="rival">vs ${m.rival}${showImportanceTag ? ` <span class="importance-tag">${info.label}</span>` : ''}</div>
-        <div class="when">${m.date || 'fecha sin definir'}${m.comp ? ' · '+m.comp : ''}${m.result ? ' · Resultado: '+m.result.home+'–'+m.result.away : ''}</div>
-      </div>
-      <div style="display:flex; align-items:center; gap:6px;" onclick="event.stopPropagation();">
-        <button class="btn ghost small" type="button" title="Mover antes en el calendario" onclick="moveMatch(${m.id}, -1)" ${idx===0?'disabled':''}>▲</button>
-        <button class="btn ghost small" type="button" title="Mover después en el calendario" onclick="moveMatch(${m.id}, 1)" ${idx===state.matches.length-1?'disabled':''}>▼</button>
-        <button class="btn ghost small" type="button" title="Editar partido" onclick="openEditMatch(${m.id})">✏️</button>
-        <button class="btn ghost small" type="button" title="Eliminar partido" onclick="deleteMatch(${m.id})">🗑️</button>
-        <div class="status-tag ${m.status}">${locked ? '🔒 bloqueado' : m.status}</div>
-      </div>
-    </div>
-  `;
-  }).join('');
+  const pending = state.matches.filter(m => m.status === 'pendiente');
+  const played = state.matches.filter(m => m.status === 'jugado').slice().reverse();
+
+  let html = '';
+  if(pending.length > 0){
+    html += `<div class="section-title" style="border:none; padding-bottom:4px; margin-top:0;">⏳ Por jugar</div>`;
+    html += pending.map((m, idx) => matchRowHtml(m, idx, pending.length, m.id !== firstPendingId, 1)).join('');
+  }
+  if(played.length > 0){
+    html += `<div class="section-title" style="border:none; padding-bottom:4px; margin-top:${pending.length>0?'18px':'0'};">✅ Jugados (más reciente primero)</div>`;
+    html += played.map((m, idx) => matchRowHtml(m, idx, played.length, false, -1)).join('');
+  }
+  list.innerHTML = html;
   persist();
 }
 
@@ -2753,13 +2810,29 @@ function deleteMatch(id){
 // calendario. Sirve para meter un partido que ya cargaste (por ej. porque clasificaste a una
 // copa) en el lugar que realmente le corresponde entre partidos que ya tenías cargados, ya que
 // solo el primer partido "pendiente" del array es jugable (el resto queda bloqueado).
+// Mueve un partido contra el próximo/anterior partido del MISMO estado (pendiente o jugado), no
+// contra el índice crudo de al lado en state.matches. Es necesario desde que el Calendario se
+// muestra seccionado (por jugar / jugados por separado): antes, mover un "pendiente" contra el
+// índice de al lado podía terminar intercambiándolo con un "jugado" intercalado, lo que no se
+// reflejaba en la sección que el usuario estaba mirando y desordenaba el calendario real por
+// abajo sin que se notara.
 function moveMatch(id, dir){
   const idx = state.matches.findIndex(x=>x.id===id);
   if(idx === -1) return;
-  const newIdx = idx + dir;
-  if(newIdx < 0 || newIdx >= state.matches.length) return;
-  const [m] = state.matches.splice(idx, 1);
-  state.matches.splice(newIdx, 0, m);
+  const m = state.matches[idx];
+  let targetIdx = -1;
+  if(dir > 0){
+    for(let i = idx+1; i < state.matches.length; i++){
+      if(state.matches[i].status === m.status){ targetIdx = i; break; }
+    }
+  } else if(dir < 0){
+    for(let i = idx-1; i >= 0; i--){
+      if(state.matches[i].status === m.status){ targetIdx = i; break; }
+    }
+  }
+  if(targetIdx === -1) return;
+  state.matches[idx] = state.matches[targetIdx];
+  state.matches[targetIdx] = m;
   renderMatches();
   renderGameDate();
   renderNextMatchBox();
@@ -2914,6 +2987,35 @@ function openMatch(id){
   document.getElementById('matchView').classList.add('active');
   document.getElementById('matchHeaderTitle').textContent = `vs ${m.rival} — ${m.date || ''}`;
   loadMatchIntoZone(id);
+}
+
+// Pedido del usuario: tocar el próximo partido (el pendiente, el que todavía hay que girar) desde
+// el Calendario debería llevar a Inicio -- que es donde vive la ruleta -- en vez de abrir la
+// vista de partido acá mismo dentro del Calendario. Un partido YA JUGADO, en cambio, sigue
+// abriéndose dentro del Calendario como hasta ahora (ahí es donde tiene sentido corregir un
+// resultado ya cargado; Inicio solo puede mostrar el próximo partido pendiente).
+function openMatchFromCalendar(id){
+  const m = state.matches.find(x=>x.id===id);
+  if(!m) return;
+  if(m.status === 'pendiente' && onboardingRequirementsMet()){
+    goToHomeToSpin();
+  } else {
+    openMatch(id);
+  }
+}
+
+// Activa la pestaña Inicio (internamente "resumen") a mano, replicando lo que hace el click real
+// del botón de esa pestaña (switchTab() por sí sola no alcanza: no reactiva el listener de los
+// botones de pestaña ni vuelve a montar/renderizar la zona de interacción de la ruleta).
+function goToHomeToSpin(){
+  closeMatchView();
+  tabButtons.forEach(x=>x.classList.remove('active'));
+  const resumenBtn = document.querySelector('#tabs button[data-tab="resumen"]');
+  if(resumenBtn) resumenBtn.classList.add('active');
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  const resumenPanel = document.getElementById('panel-resumen');
+  if(resumenPanel) resumenPanel.classList.add('active');
+  renderHomeInteraction();
 }
 
 function renderHomeInteraction(){
@@ -3098,10 +3200,28 @@ document.getElementById('continueBtn').addEventListener('click', () => {
 });
 
 // ------------------ LÍNEA DE TIEMPO DEL CLUB ------------------
+// Pedido del usuario: saber cuál fue su racha invicta máxima. Cuenta partidos consecutivos sin
+// perder (ganados o empatados); cualquier derrota corta la racha. Usa state.timeline, que ya
+// queda en el orden real en que se jugaron los partidos.
+function computeMaxUnbeatenStreak(){
+  const tl = state.timeline || [];
+  let max = 0, current = 0;
+  tl.forEach(t => {
+    if(t.outcome === 'derrota'){ current = 0; }
+    else { current += 1; if(current > max) max = current; }
+  });
+  return max;
+}
+
 function addTimelineEntry(m){
   const club = state.profile.club || 'el club';
   const r = m.result;
-  const outcome = r.home > r.away ? 'victoria' : (r.home < r.away ? 'derrota' : 'empate');
+  // Usa la misma clasificación que ya usa el guardado del resultado (computeMatchOutcome), para
+  // que un 0-0 ganado/perdido por penales quede bien contado acá también (antes esto miraba
+  // solo el marcador, así que una clasificación por penales podía aparecer como "empate" en la
+  // línea de tiempo y en el cálculo del máximo invicto).
+  const outcomeKind = computeMatchOutcome(r.home, r.away, r.penaltyWinner || null).outcome;
+  const outcome = outcomeKind === 'win' ? 'victoria' : (outcomeKind === 'loss' ? 'derrota' : 'empate');
   state.timeline = state.timeline || [];
   state.timeline.push({
     matchId: m.id,
@@ -5685,7 +5805,15 @@ function renderCloseSeasonRows(){
       <div class="field-row">
         <div>
           <label>¿Se cumplió? (para el cierre de temporada)</label>
+          <!-- Bug real reportado por el usuario: este select arrancaba en "Sí, se cumplió" por
+          defecto. Si cerrabas la temporada sin tocar a propósito CADA competencia (por ejemplo,
+          si solo querías cerrar una y te olvidaste del resto, o tocaste "Cerrar temporada" sin
+          terminar de revisar todo), cualquiera que quedara sin tocar se registraba como CUMPLIDA
+          en silencio -- si el objetivo era "Ganar el título", eso generaba un título fantasma
+          que nunca se ganó de verdad. Ahora no hay ninguna opción pre-elegida: el botón de
+          cerrar temporada exige que cada una se elija a mano antes de dejar pasar nada. -->
           <select class="close-season-met" data-comp="${c.name}" data-objective="${c.objective}" data-priority="${c.priority}">
+            <option value="" selected disabled>— Elegí una opción —</option>
             <option value="si">Sí, se cumplió</option>
             <option value="no">No, no se cumplió</option>
           </select>
@@ -5744,13 +5872,32 @@ function markObjectiveNow(comp, met){
 // historial de objetivos. Saca la marca de "resuelto a mitad de temporada" para esa competencia
 // (así vuelve a aparecer con los selectores para cargarlo de nuevo) y borra el registro más
 // reciente que se haya guardado para esa competencia+temporada como registro a mitad de
-// temporada. Igual que deleteTrophy, a propósito NO deshace el efecto que ya tuvo en las barras.
+// temporada.
+// Bug real encontrado simulando una temporada completa de punta a punta: esta función dejaba la
+// marca de "ya registrado" libre para volver a cargar el MISMO objetivo, pero nunca deshacía el
+// efecto que ese registro había tenido en las barras ni en el conteo de títulos. Eso permitía
+// "deshacer y volver a cargar" el mismo objetivo una y otra vez para farmear relación con la
+// dirigencia/afición/plantel (y hasta títulos) sin límite -- justo lo contrario de "que todo
+// repercuta bien en las barras". Ahora sí es un deshacer de verdad: revierte exactamente el
+// efecto que ese registro había aplicado (usando su propia prioridad/resultado guardado), antes
+// de sacar la marca y el registro, así que deshacer + volver a cargar da un neto de cero.
 function undoResolvedObjective(comp){
-  if(!confirm(`¿Deshacer el registro de "${comp}" de esta temporada? Vas a poder volver a cargarlo. Esto no deshace el efecto que ya tuvo en tus barras.`)) return;
+  if(!confirm(`¿Deshacer el registro de "${comp}" de esta temporada? Vas a poder volver a cargarlo. Esto revierte el efecto que tuvo en tus barras (y en el título, si correspondía).`)) return;
   if(state.profile.competitionResolvedThisSeason) delete state.profile.competitionResolvedThisSeason[comp];
   const season = state.season.year || '—';
   const idx = state.trophies.findIndex(t => t.competition === comp && t.season === season && t.midSeason);
-  if(idx !== -1) state.trophies.splice(idx, 1);
+  if(idx !== -1){
+    const entry = state.trophies[idx];
+    const table = entry.met ? PRIORITY_BONUS[entry.priority] : PRIORITY_PENALTY[entry.priority];
+    if(table){
+      adjustStatRaw('clubRelation', -table.clubRelation);
+      adjustStatRaw('fanRelation', -table.fanRelation);
+      adjustStatRaw('playerRelation', -table.playerRelation);
+    }
+    if(entry.trophy) state.stintStats.titles = Math.max(0, state.stintStats.titles - 1);
+    state.trophies.splice(idx, 1);
+  }
+  renderProfile();
   renderTrophies();
   renderTrophyCabinet();
   renderCloseSeasonRows();
@@ -5762,9 +5909,22 @@ document.getElementById('closeSeasonBtn').addEventListener('click', () => {
   // objetivo definido" o marcadas como "no se disputa"), el botón no hacía nada. Pero eso ya
   // no es un caso raro: ahora es el estado normal de una competencia neutra, así que la
   // temporada tiene que poder cerrarse (avanzar el año) igual, aunque no haya nada que evaluar.
+  const selects = Array.from(document.querySelectorAll('.close-season-met'));
+  // Ver el comentario en renderCloseSeasonRows: antes el select arrancaba en "Sí, se cumplió"
+  // por defecto, y cerrar la temporada sin haber tocado a mano cada competencia terminaba
+  // registrando títulos/objetivos fantasma. Ahora se frena acá directamente: si falta elegir
+  // alguna, no se registra NADA todavía (ni las que sí estaban bien elegidas), para no dejar el
+  // cierre a mitad de camino.
+  const missing = selects.filter(sel => sel.value !== 'si' && sel.value !== 'no');
+  if(missing.length > 0){
+    alert(`Te falta indicar si se cumplió o no el objetivo en: ${missing.map(s=>s.dataset.comp).join(', ')}. Elegí una opción en cada competencia antes de cerrar la temporada.`);
+    return;
+  }
+  if(!confirm('¿Cerrar la temporada con lo que elegiste? Esto va a mover tus barras según cada objetivo y avanza al año siguiente. No hace falta apurarse: podés revisar cada competencia antes de confirmar.')) return;
+
   const titlesWonThisClose = [];
 
-  document.querySelectorAll('.close-season-met').forEach(sel => {
+  selects.forEach(sel => {
     const comp = sel.dataset.comp;
     const objective = sel.dataset.objective;
     const priority = sel.dataset.priority || 'medio';
@@ -5816,6 +5976,10 @@ let editingTrophyIdx = null;
 function renderTrophies(){
   const list = document.getElementById('trophyList');
   const empty = document.getElementById('trophyEmpty');
+  // Pedido del usuario: ya no hay una sección visible de historial de objetivos en la página
+  // (se sacó a propósito), así que esta función queda sin nada para actualizar. Se deja sin
+  // romper nada por si en algún momento se vuelve a agregar esa sección.
+  if(!list || !empty) return;
   if(state.trophies.length === 0){
     list.innerHTML = '';
     empty.style.display = 'block';
@@ -5951,6 +6115,13 @@ document.getElementById('changeClubBtn').addEventListener('click', () => {
   const newYear = document.getElementById('newClubYear').value.trim();
   if(!newClub) return;
 
+  // Bug real reportado: no había ninguna confirmación acá, así que un toque sin querer en este
+  // botón (con cualquier texto que hubiera quedado cargado en "Nuevo club") registraba de una un
+  // club en el que el usuario nunca dirigió, sin forma de deshacerlo. Esto resetea plantel,
+  // calendario y barras, así que ahora se pide confirmar antes de ejecutarlo.
+  const oldClubForConfirm = state.profile.club || 'tu club actual';
+  if(!confirm(`¿Confirmás el cambio de club? Vas a dejar de dirigir en ${oldClubForConfirm} y arrancar en ${newClub}. Esto resetea tu plantel y calendario, y las barras vuelven al punto medio. Se guarda como un nuevo período en tu historial de clubes.`)) return;
+
   const oldClub = state.profile.club || 'tu club anterior';
   const s = state.stats;
   let farewell;
@@ -5966,6 +6137,7 @@ document.getElementById('changeClubBtn').addEventListener('click', () => {
     club: oldClub,
     year: state.profile.year || '—',
     exitStats: { ...s },
+    reputationAtExit: state.reputation,
     matchStats: { ...state.stintStats },
     note: farewell
   });
@@ -5984,6 +6156,16 @@ document.getElementById('changeClubBtn').addEventListener('click', () => {
   state.timeline = [];
   state.playerMood = {};
   state.playerAvailability = {};
+  // Pedido del usuario: "revisa bien si hacemos cambio de club que no se buguee nada y que
+  // arranque todo de 0". Faltaban estos cuatro, que quedaban pisando el club nuevo con datos del
+  // club viejo: la reputación no se reiniciaba (seguía siendo la del club anterior en vez de
+  // arrancar en punto medio, como sí hacen las otras barras), una crisis financiera activa del
+  // club viejo podía seguir "colgada" en el nuevo, y el riesgo de lesión/salida de jugadores que
+  // ya no están en el plantel quedaba guardado sin ningún sentido.
+  state.reputation = 50;
+  state.financeCrisis = { active: null, strikes: 0 };
+  state.playerRisk = {};
+  state.playerLeaveRisk = {};
   state.crisisFired = false;
   state.season = { year:'', objective:'' };
   state.standings = [];
@@ -5993,6 +6175,15 @@ document.getElementById('changeClubBtn').addEventListener('click', () => {
   state.firedFlag = false;
   state.goldenMomentFired = false;
   state.pendingFutureEvents = [];
+  // Estas son variables sueltas (no viven dentro de "state"), pero también podían arrastrar algo
+  // del club viejo a mitad de una interacción (un partido abierto que ya no existe, un trofeo o
+  // período de carrera que había quedado en edición, la ruleta "trabada" en girando): se limpian
+  // para que la pantalla no quede en un estado raro apenas se cambia de club.
+  activeMatchId = null;
+  currentScorers = [];
+  editingTrophyIdx = null;
+  editingCareerIdx = null;
+  spinning = false;
 
   document.getElementById('dtClub').value = newClub;
   document.getElementById('dtYear').value = newYear;
@@ -6013,6 +6204,12 @@ document.getElementById('changeClubBtn').addEventListener('click', () => {
   renderCareer();
 });
 
+// Pedido del usuario: "que todo se pueda editar y borrar por si suceden bugs". El historial de
+// clubes no tenía NINGUNA forma de corregir o borrar un período mal cargado (por ejemplo, por el
+// bug ya corregido de "Confirmar cambio de club" sin ninguna confirmación de por medio, que podía
+// registrar un club en el que en realidad nunca se dirigió). Ahora cada período se puede editar
+// (nombre del club, año) o eliminar directamente.
+let editingCareerIdx = null;
 function renderCareer(){
   const list = document.getElementById('careerList');
   const empty = document.getElementById('careerEmpty');
@@ -6022,17 +6219,73 @@ function renderCareer(){
     return;
   }
   empty.style.display = 'none';
-  list.innerHTML = state.careerHistory.map(c => {
+  list.innerHTML = state.careerHistory.map((c, idx) => {
     const ms = c.matchStats || { played:0, won:0, drawn:0, lost:0, seasons:0, titles:0 };
+    if(editingCareerIdx === idx){
+      return `
+      <div class="match-row" style="cursor:default; display:block;">
+        <div class="rival" style="margin-bottom:8px;">Editar período</div>
+        <div class="field-row">
+          <div>
+            <label>Club</label>
+            <input id="editCareerClub" type="text" value="${(c.club||'').replace(/"/g,'&quot;')}">
+          </div>
+          <div>
+            <label>Hasta (año)</label>
+            <input id="editCareerYear" type="text" value="${(c.year||'').replace(/"/g,'&quot;')}">
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:10px;">
+          <button class="btn ghost small" type="button" onclick="saveCareerEdit(${idx})">Guardar cambios</button>
+          <button class="btn ghost small" type="button" onclick="cancelCareerEdit()">Cancelar</button>
+        </div>
+      </div>`;
+    }
     return `
     <div class="match-row" style="cursor:default;">
       <div class="left">
         <div class="rival">${c.club}</div>
         <div class="when">Hasta ${c.year} · ${ms.seasons} temporada${ms.seasons===1?'':'s'} · ${ms.titles} título${ms.titles===1?'':'s'} · ${ms.played} PJ (${ms.won}G-${ms.drawn}E-${ms.lost}P)</div>
       </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button class="link-btn" type="button" onclick="editCareerEntry(${idx})">Editar</button>
+        <button class="link-btn" type="button" style="color:var(--alert);" onclick="deleteCareerEntry(${idx})">Eliminar</button>
+      </div>
     </div>
   `;
   }).join('');
+}
+function editCareerEntry(idx){
+  editingCareerIdx = idx;
+  renderCareer();
+}
+function cancelCareerEdit(){
+  editingCareerIdx = null;
+  renderCareer();
+}
+function saveCareerEdit(idx){
+  const c = state.careerHistory[idx];
+  if(!c) return;
+  const club = document.getElementById('editCareerClub').value.trim();
+  const year = document.getElementById('editCareerYear').value.trim();
+  if(club) c.club = club;
+  c.year = year;
+  editingCareerIdx = null;
+  renderCareer();
+  persist();
+}
+// A propósito NO deshace ningún efecto que ese período ya haya tenido en las barras en su
+// momento (misma lógica que deleteTrophy): esto es solo para sacar del historial un registro
+// cargado por error, no para "reescribir" tu carrera actual.
+function deleteCareerEntry(idx){
+  const c = state.careerHistory[idx];
+  if(!c) return;
+  if(!confirm(`¿Eliminar el período en "${c.club}" (hasta ${c.year}) de tu historial de clubes? Esto no deshace ningún efecto que ya haya tenido en tus barras, solo saca el registro del historial.`)) return;
+  state.careerHistory.splice(idx, 1);
+  if(editingCareerIdx === idx) editingCareerIdx = null;
+  else if(editingCareerIdx !== null && editingCareerIdx > idx) editingCareerIdx -= 1;
+  renderCareer();
+  persist();
 }
 
 // ------------------ DATOS DE EJEMPLO (para probar el flujo) ------------------
