@@ -685,7 +685,7 @@
     <div class="masthead">GRAN&nbsp;<span>MANAGER</span></div>
     <div style="text-align:right;">
       <div class="dateline" id="dateline"></div>
-      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build OBJEDIT-12</div>
+      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build RULEBATCH-13</div>
       <div class="dateline" id="userLine" style="margin-top:4px;">
         <span id="userLabel"></span><span id="frenzyBadge" style="display:none; color:var(--alert); font-weight:700;"> · 🔥 FRENÉTICO</span> · <button class="link-btn" id="manualSaveBtn" title="Forzar guardado de la partida">💾 Guardar</button> · <button class="link-btn" id="exportSaveBtn" title="Descargar una copia de seguridad como archivo">⬇️ Copia</button> · <button class="link-btn" id="importSaveBtn" title="Restaurar una copia de seguridad desde archivo">⬆️ Restaurar</button><input type="file" id="importSaveInput" accept="application/json" style="display:none;"> · <button class="link-btn" id="logoutBtn">Cerrar sesión</button>
       </div>
@@ -865,7 +865,11 @@
       <button class="btn ghost" id="closeSeasonBtn" style="margin-top:10px;">Cerrar temporada y evaluar</button>
     </div>
 
-    <div class="section-title">Palmarés</div>
+    <div class="section-title">Historial de objetivos por temporada</div>
+    <!-- Pedido del usuario: acá se registra CUALQUIER objetivo cerrado (cumplido o no, sea
+    título, semifinales, etc.), así que a propósito NO se llama "Palmarés" -- el palmarés real
+    (solo títulos ganados) está en "🏆 Vitrina de títulos", en Perfil del DT, que ya filtra
+    únicamente objetivo === 'Ganar el título' con met:true. -->
     <div class="match-list" id="trophyList"></div>
     <div id="trophyEmpty" class="empty-note">Todavía no se cerró ninguna temporada.</div>
   </section>
@@ -1153,6 +1157,21 @@
             </div>
             <div><label>Nota / comentario</label><input id="matchNote" type="text" placeholder="Opcional"></div>
           </div>
+          <div id="penaltiesRow" style="display:none; margin-top:10px;">
+            <label style="display:flex; align-items:center; gap:8px; font-weight:400;">
+              <input type="checkbox" id="penaltiesCheck">
+              Se definió por penales (el resultado de arriba quedó igualado)
+            </label>
+            <div id="penaltiesWinnerRow" class="field-row" style="display:none; margin-top:8px;">
+              <div>
+                <label>¿Quién ganó los penales?</label>
+                <select id="penaltiesWinner">
+                  <option value="home">Ganaste vos</option>
+                  <option value="away">Ganó el rival</option>
+                </select>
+              </div>
+            </div>
+          </div>
           <button class="btn" id="saveResult">Guardar resultado</button>
         </div>
 
@@ -1303,6 +1322,19 @@ const GOAL_DIFF_TABLE_LOSS = {
   10: { personality:-2, clubRelation:-9, playerRelation:-5, fanRelation:-15, pressRelation:-4 }, // 10 o más
 };
 const GOAL_DIFF_DRAW = { personality:0, clubRelation:0, playerRelation:0, fanRelation:-1, pressRelation:0 };
+// Definición por penales en un partido definitorio: el partido en sí quedó empatado (no hubo
+// una diferencia de gol real), así que el impacto en las barras NO usa las tablas de goleada de
+// arriba -- sería raro que ganar 0-0 por penales pese como una goleada. Es un impacto moderado,
+// propio de avanzar/quedar afuera, pero sin la "gloria"/"catástrofe" de un resultado en cancha.
+const PENALTY_SHOOTOUT_EFFECT_WIN  = { personality:1, clubRelation:2, playerRelation:1, fanRelation:2, pressRelation:1 };
+const PENALTY_SHOOTOUT_EFFECT_LOSS = { personality:-1, clubRelation:-1, playerRelation:-1, fanRelation:-2, pressRelation:-1 };
+// Fases de eliminación directa / definitorias, donde un empate en el marcador puede terminar
+// resolviéndose por penales (pedido del usuario: "en los partidos definitorios que se pueda
+// ganar o perder por penales también").
+const PENALTY_ELIGIBLE_IMPORTANCE = new Set([
+  'definitorio', 'reclasificacion', 'octavos', 'cuartos', 'semifinal_playoff', 'final_playoff',
+  'vuelta', 'semifinal', 'final',
+]);
 
 function goalDiffEffects(diff){
   if(diff === 0) return GOAL_DIFF_DRAW;
@@ -1313,6 +1345,20 @@ function goalDiffEffects(diff){
   else if(mag >= 6) key = 6;
   else key = mag;
   return table[key];
+}
+
+// Centraliza la clasificación ganó/perdió/empató de un resultado, para poder reutilizarla tanto
+// al aplicar un resultado nuevo como al deshacer uno viejo (edición), y para que un empate en el
+// marcador definido por penales cuente como victoria/derrota (a fines de racha, reputación e
+// historial) sin usar las tablas de goleada, ya que en la cancha fue un empate real.
+function computeMatchOutcome(home, away, penaltyWinner){
+  const goalDiff = home - away;
+  if(goalDiff !== 0){
+    return { outcome: goalDiff > 0 ? 'win' : 'loss', effects: goalDiffEffects(goalDiff), viaPenalties: false };
+  }
+  if(penaltyWinner === 'home') return { outcome:'win', effects: PENALTY_SHOOTOUT_EFFECT_WIN, viaPenalties:true };
+  if(penaltyWinner === 'away') return { outcome:'loss', effects: PENALTY_SHOOTOUT_EFFECT_LOSS, viaPenalties:true };
+  return { outcome:'draw', effects: GOAL_DIFF_DRAW, viaPenalties:false };
 }
 
 function importanceInfo(comp, value){
@@ -1572,6 +1618,18 @@ const OBJECTIVE_OPTIONS = [
 // siempre habilitados y cada cambio se guarda al toque (igual que ya hacía el checkbox de "no
 // se disputa esta temporada"), así se puede agregar o cambiar un objetivo en cualquier momento
 // de la temporada, no solo al armar el perfil.
+// Pedido del usuario: "no se distingue cuál es medio, cuál no se juega y cuál nada. Está todo
+// muy junto y no se entiende qué cosa va con qué cosa". Antes cada competencia era UNA fila con
+// label + 2 selects + checkbox todos apretados en la misma línea (con flex-wrap rompiendo el
+// orden en pantallas chicas). Ahora cada competencia es su propia tarjeta separada, con el
+// nombre de la competencia como título, el objetivo y la gravedad cada uno en su propio campo
+// con su label arriba, y el estado "no se disputa" bien diferenciado (oculta los campos que no
+// aplican y lo aclara en texto, en vez de dejarlos ahí deshabilitados y confusos).
+const PRIORITY_OBJ_LABELS = {
+  obligatorio: '🔴 Obligatorio — no cumplirlo puede costarte el puesto',
+  medio: '🟡 Nivel medio — no cumplirlo pega, pero no es determinante por sí solo',
+  bajo: '🟢 Nivel bajo — casi no pesa si no se cumple',
+};
 function renderObjectivesByComp(competitions){
   const list = document.getElementById('dtObjectivesList');
   const notPlayed = state.profile.competitionNotPlayed || {};
@@ -1581,26 +1639,35 @@ function renderObjectivesByComp(competitions){
     const isNotPlayed = !!notPlayed[c];
     const compEscaped = c.replace(/'/g,"\\'");
     return `
-    <div class="field-row" style="margin-bottom:8px;">
-      <div style="grid-column:1/-1; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-        <label style="min-width:180px; margin:0;">${c}</label>
-        <select class="comp-objective-select" data-comp="${c}" style="flex:1; min-width:180px;" ${isNotPlayed?'disabled':''} onchange="updateCompObjective('${compEscaped}', this.value)">
-          ${OBJECTIVE_OPTIONS.map(o => `<option value="${o}" ${o===current?'selected':''}>${o}</option>`).join('')}
-        </select>
-        <select class="comp-priority-select" data-comp="${c}" style="min-width:150px;" ${isNotPlayed?'disabled':''} onchange="updateCompPriority('${compEscaped}', this.value)">
-          <option value="obligatorio" ${currentPriority==='obligatorio'?'selected':''}>🔴 Obligatorio</option>
-          <option value="medio" ${currentPriority==='medio'?'selected':''}>🟡 Nivel medio</option>
-          <option value="bajo" ${currentPriority==='bajo'?'selected':''}>🟢 Nivel bajo</option>
-        </select>
-        <label style="display:flex; align-items:center; gap:6px; min-width:auto; font-weight:400; opacity:0.85;">
+    <div class="card" style="margin-bottom:10px; padding:14px 16px; ${isNotPlayed ? 'opacity:0.65;' : ''}">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:${isNotPlayed?'6px':'12px'};">
+        <div style="font-weight:700; font-size:16px;">${c}</div>
+        <label style="display:flex; align-items:center; gap:6px; min-width:auto; font-weight:400; opacity:0.85; margin:0;">
           <input type="checkbox" class="comp-notplayed-check" data-comp="${c}" ${isNotPlayed?'checked':''} onchange="toggleCompNotPlayed('${compEscaped}', this.checked)">
           No se disputa esta temporada
         </label>
       </div>
+      ${isNotPlayed ? `
+      <div class="dateline">Marcada como no disputada: no se le pide objetivo y no se evalúa ni afecta tus barras esta temporada.</div>
+      ` : `
+      <div class="field-row">
+        <div>
+          <label>Objetivo</label>
+          <select class="comp-objective-select" data-comp="${c}" onchange="updateCompObjective('${compEscaped}', this.value)">
+            ${OBJECTIVE_OPTIONS.map(o => `<option value="${o}" ${o===current?'selected':''}>${o}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label>Gravedad si no se cumple</label>
+          <select class="comp-priority-select" data-comp="${c}" onchange="updateCompPriority('${compEscaped}', this.value)">
+            ${Object.entries(PRIORITY_OBJ_LABELS).map(([k,label]) => `<option value="${k}" ${currentPriority===k?'selected':''}>${label}</option>`).join('')}
+          </select>
+        </div>
+      </div>`}
     </div>`;
   }).join('') + `
     <div class="dateline" style="margin-top:6px;">
-      Podés cambiar el objetivo o el nivel de cualquier competencia en el momento que quieras durante la temporada, no hace falta esperar a armar el perfil. El nivel marca qué tan grave es no cumplirlo: un objetivo "Obligatorio" incumplido puede costarte el puesto.
+      Podés cambiar el objetivo o la gravedad de cualquier competencia en el momento que quieras durante la temporada, no hace falta esperar a armar el perfil.
     </div>`;
 }
 
@@ -2746,7 +2813,10 @@ function loadMatchIntoZone(id){
   spinning = false;
   const m = state.matches.find(x=>x.id===id);
   if(!m) return;
-  checkPreMatchConference(m);
+  // Blindada por la misma razón que el bloque de arriba: si la previa de un partido grande
+  // (checkPreMatchConference) tirara una excepción, antes se cortaba toda la carga del partido a
+  // mitad de camino sin avisar. Ahora, si eso pasa, se sigue igual con la carga del partido.
+  try{ checkPreMatchConference(m); }catch(e){ console.warn('Error al mostrar la previa del partido:', e); }
   document.getElementById('scoreClubLabel').textContent = state.profile.club || 'Club';
   document.getElementById('scoreRivalLabel').textContent = m.rival;
 
@@ -2777,6 +2847,22 @@ function loadMatchIntoZone(id){
   }
   document.getElementById('matchResultForm').style.display = m.event ? 'block' : 'none';
   document.getElementById('saveResult').textContent = m.result ? 'Corregir resultado' : 'Guardar resultado';
+
+  // Pedido del usuario: en partidos definitorios/de eliminación directa, poder marcar que el
+  // resultado (aunque haya quedado empatado arriba) se terminó definiendo por penales.
+  const penaltiesRow = document.getElementById('penaltiesRow');
+  const penaltiesCheck = document.getElementById('penaltiesCheck');
+  const penaltiesWinnerRow = document.getElementById('penaltiesWinnerRow');
+  const penaltiesEligible = m.importance && PENALTY_ELIGIBLE_IMPORTANCE.has(m.importance);
+  penaltiesRow.style.display = penaltiesEligible ? 'block' : 'none';
+  if(m.result && m.result.penaltyWinner){
+    penaltiesCheck.checked = true;
+    penaltiesWinnerRow.style.display = 'block';
+    document.getElementById('penaltiesWinner').value = m.result.penaltyWinner;
+  } else {
+    penaltiesCheck.checked = false;
+    penaltiesWinnerRow.style.display = 'none';
+  }
 }
 
 function mountZone(targetId){
@@ -2824,6 +2910,10 @@ document.getElementById('backBtn').addEventListener('click', () => {
   renderMatches();
 });
 
+document.getElementById('penaltiesCheck').addEventListener('change', (e) => {
+  document.getElementById('penaltiesWinnerRow').style.display = e.target.checked ? 'block' : 'none';
+});
+
 document.getElementById('saveResult').addEventListener('click', () => {
   const m = state.matches.find(x=>x.id===activeMatchId);
   if(!m) return;
@@ -2837,14 +2927,13 @@ document.getElementById('saveResult').addEventListener('click', () => {
   const mult = info ? info.mult : 1;
 
   if(isEdit){
-    const oldGoalDiff = oldResult.home - oldResult.away;
-    const oldEffects = goalDiffEffects(oldGoalDiff);
-    Object.entries(oldEffects).forEach(([stat, val]) => { if(val !== 0) adjustStatRaw(stat, -val * mult); });
-    if(oldResult.home > oldResult.away){
+    const oldOutcome = computeMatchOutcome(oldResult.home, oldResult.away, oldResult.penaltyWinner || null);
+    Object.entries(oldOutcome.effects).forEach(([stat, val]) => { if(val !== 0) adjustStatRaw(stat, -val * mult); });
+    if(oldOutcome.outcome === 'win'){
       state.stintStats.won = Math.max(0, state.stintStats.won - 1);
       state.stintStats.played = Math.max(0, state.stintStats.played - 1);
       state.reputation -= Math.round(3*mult);
-    } else if(oldResult.home < oldResult.away){
+    } else if(oldOutcome.outcome === 'loss'){
       state.stintStats.lost = Math.max(0, state.stintStats.lost - 1);
       state.stintStats.played = Math.max(0, state.stintStats.played - 1);
       state.reputation += Math.round(3*mult);
@@ -2859,17 +2948,29 @@ document.getElementById('saveResult').addEventListener('click', () => {
   const home = parseInt(document.getElementById('scoreHome').value) || 0;
   const away = parseInt(document.getElementById('scoreAway').value) || 0;
   const scorersNames = currentScorers.slice();
-  m.result = { home, away, scorers: scorersNames.join(', '), note: document.getElementById('matchNote').value.trim() };
+  // Pedido del usuario: en partidos definitorios/de eliminación directa, un resultado que quedó
+  // empatado en el marcador puede haberse definido por penales -- eso también tiene que poder
+  // ganarse o perderse, no quedar como un simple empate sin consecuencias.
+  const penaltiesEligible = m.importance && PENALTY_ELIGIBLE_IMPORTANCE.has(m.importance);
+  const penaltiesChecked = penaltiesEligible && document.getElementById('penaltiesCheck').checked;
+  let penaltyWinner = null;
+  if(penaltiesChecked){
+    if(home !== away){
+      alert('Marcaste "definido por penales", pero el resultado de arriba no quedó empatado. Los penales solo se aplican cuando el marcador quedó igualado, así que se guarda el resultado tal cual está, sin penales.');
+    } else {
+      penaltyWinner = document.getElementById('penaltiesWinner').value === 'away' ? 'away' : 'home';
+    }
+  }
+  m.result = { home, away, scorers: scorersNames.join(', '), note: document.getElementById('matchNote').value.trim(), penaltyWinner };
   m.status = 'jugado';
   const isBigMatch = mult >= 1.6;
-  const goalDiff = home - away;
-  const baseEffects = goalDiffEffects(goalDiff);
+  const outcome = computeMatchOutcome(home, away, penaltyWinner);
 
-  Object.entries(baseEffects).forEach(([stat, val]) => {
+  Object.entries(outcome.effects).forEach(([stat, val]) => {
     if(val !== 0) adjustStatRaw(stat, val * mult);
   });
 
-  if(home > away){
+  if(outcome.outcome === 'win'){
     state.consecutiveLosses = 0;
     state.stintStats.played += 1;
     state.stintStats.won += 1;
@@ -2877,11 +2978,12 @@ document.getElementById('saveResult').addEventListener('click', () => {
     if(isBigMatch && !isEdit){
       state.eventHistory.unshift({
         matchId: m.id, rival: m.rival, date: m.date,
-        tag: (info.label || '').toUpperCase(), title: `¡Victoria en ${info.label} frente a ${m.rival}!`,
-        body: `Ganar un partido de esta magnitud repercute con fuerza en el vestuario, la dirigencia y la afición.`
+        tag: (info.label || '').toUpperCase(),
+        title: outcome.viaPenalties ? `¡Victoria por penales en ${info.label} frente a ${m.rival}!` : `¡Victoria en ${info.label} frente a ${m.rival}!`,
+        body: outcome.viaPenalties ? `El partido terminó igualado en la cancha y se definió desde los doce pasos: una clasificación así también repercute con fuerza en el vestuario, la dirigencia y la afición.` : `Ganar un partido de esta magnitud repercute con fuerza en el vestuario, la dirigencia y la afición.`
       });
     }
-  } else if(home < away){
+  } else if(outcome.outcome === 'loss'){
     state.consecutiveLosses = (state.consecutiveLosses || 0) + 1;
     state.stintStats.played += 1;
     state.stintStats.lost += 1;
@@ -2889,8 +2991,9 @@ document.getElementById('saveResult').addEventListener('click', () => {
     if(isBigMatch && !isEdit){
       state.eventHistory.unshift({
         matchId: m.id, rival: m.rival, date: m.date,
-        tag: (info.label || '').toUpperCase(), title: `Dura derrota en ${info.label} ante ${m.rival}`,
-        body: `Perder un partido de esta magnitud pega fuerte: se resiente el vestuario, la dirigencia y la afición.`
+        tag: (info.label || '').toUpperCase(),
+        title: outcome.viaPenalties ? `Eliminación por penales en ${info.label} ante ${m.rival}` : `Dura derrota en ${info.label} ante ${m.rival}`,
+        body: outcome.viaPenalties ? `El partido terminó igualado en la cancha, pero los penales no fueron favorables: una eliminación así también pega fuerte en el vestuario, la dirigencia y la afición.` : `Perder un partido de esta magnitud pega fuerte: se resiente el vestuario, la dirigencia y la afición.`
       });
     }
     if(!isEdit && state.stats.fanRelation <= 45){
@@ -2941,12 +3044,24 @@ function checkPressLeak(){
 }
 
 document.getElementById('continueBtn').addEventListener('click', () => {
+  // Bug real reportado: "a veces, al salir un evento en la ruleta, luego no permite cargar
+  // partido; me obliga a actualizar la página". closeMatchView/renderMatches ya dejan el
+  // calendario andando, pero checkExtremeStates()/checkFutureEvents() no estaban blindados: si
+  // cualquiera de las dos tiraba una excepción inesperada (una crisis financiera o un evento a
+  // futuro con datos raros, por ejemplo tras recuperar una partida vieja de la nube), el jugador
+  // quedaba con el calendario a medio pintar y sin ningún aviso, y la única salida era recargar
+  // toda la página. Ahora se atrapa el error y se avisa, sin dejar la pantalla trabada.
   closeMatchView();
   switchTab('calendario');
   renderMatches();
   state._suppressExtremeChecks = false;
-  checkExtremeStates();
-  checkFutureEvents();
+  try{
+    checkExtremeStates();
+    checkFutureEvents();
+  }catch(e){
+    console.warn('Error al revisar crisis/eventos a futuro tras el partido:', e);
+    alert('Hubo un problema de fondo al revisar el estado del club, pero tu calendario ya está actualizado y podés seguir jugando con normalidad.\n\nDetalle técnico: ' + (e && e.message ? e.message : e));
+  }
 });
 
 // ------------------ LÍNEA DE TIEMPO DEL CLUB ------------------
@@ -3522,7 +3637,11 @@ function showPressConference(playedMatch){
   if(playedMatch.event && playedMatch.event.tag !== 'SIN NOVEDAD'){
     const ev = playedMatch.event;
     const pid = ev.playerId || null;
-    const evTitle = evText(ev.title, ev.playerName);
+    // Blindaje: pase lo que pase (un evento guardado/recargado con datos incompletos, un caso
+    // límite no contemplado), la pregunta de prensa NUNCA debe citar un título vacío ("¿Qué
+    // puede decirnos sobre esto: ""?"). Si por lo que sea evText no devuelve texto, se usa una
+    // frase genérica en su lugar en vez de dejar la comilla vacía.
+    const evTitle = evText(ev.title, ev.playerName) || 'esto que trascendió en la semana';
     if(ev.positive){
       const evName = ev.playerName || 'el plantel';
       pool.push({ text: pick(EVENT_IMPACT_POSITIVE_QUESTIONS)(evTitle), playerId: pid, options: eventImpactPositiveQuoteOptions(evName).map(o=>({...o, playerId:pid})) });
@@ -4524,7 +4643,23 @@ document.getElementById('spinBtn').addEventListener('click', () => {
     canvas.style.transform = `rotate(${finalRotation}deg)`;
     currentRotation = finalRotation;
 
-    setTimeout(() => {
+    // Bug real reportado: "a veces se corta todo, no deja ver la animación". Antes esto dependía
+    // 100% de un setTimeout de 4600ms fijo, calcado del tiempo de la transición CSS (4.5s). En el
+    // celular, si la pestaña queda en segundo plano un instante durante ese lapso (se apaga la
+    // pantalla, llega una notificación, se cambia de app un segundo), los navegadores móviles
+    // frenan/retrasan tanto los timers de JS como el render de la transición CSS, y pueden volver
+    // a fireado en momentos ligeramente distintos: el resultado aparece "cortado", sin haberse
+    // visto terminar el giro. Ahora se resuelve mirando el evento real 'transitionend' del giro
+    // (que solo se dispara cuando la animación termina de verdad, la haya tapado el sistema o
+    // no), con el setTimeout de siempre como red de seguridad por si ese evento no llega a
+    // disparar por algún motivo (pasa en algunos navegadores si el elemento se oculta a mitad de
+    // camino). resolveSpinOnce() se asegura de que la resolución corra una sola vez sin importar
+    // cuál de las dos vías dispare primero.
+    let spinResolved = false;
+    const resolveSpinOnce = () => {
+      if(spinResolved) return;
+      spinResolved = true;
+      canvas.removeEventListener('transitionend', resolveSpinOnce);
       try{
         spinning = false;
         if(dtDeathRoll){
@@ -4556,7 +4691,9 @@ document.getElementById('spinBtn').addEventListener('click', () => {
         // que ir agregando alertas de diagnóstico una por una como se hizo antes.
         alert('Hubo un problema al resolver el giro. Probá tocar "Girar" de nuevo; si sigue sin andar, recargá la página.\n\nDetalle técnico: ' + (e && e.message ? e.message : e));
       }
-    }, 4600);
+    };
+    canvas.addEventListener('transitionend', resolveSpinOnce, { once: true });
+    setTimeout(resolveSpinOnce, 5200);
   }catch(e){
     console.warn('Error al iniciar el giro de la ruleta:', e);
     spinning = false;
@@ -4565,6 +4702,25 @@ document.getElementById('spinBtn').addEventListener('click', () => {
     alert('Hubo un problema al iniciar el giro. Probá de nuevo; si sigue sin andar, recargá la página.\n\nDetalle técnico: ' + (e && e.message ? e.message : e));
   }
 });
+
+// Red de seguridad adicional para el mismo bug: si por lo que sea "spinning" queda trabado en
+// true más de 10 segundos (ni el transitionend ni el setTimeout de respaldo llegaron a disparar
+// -- algo que en teoría no debería pasar nunca, pero un navegador de celular puede sorprender),
+// se libera solo, sin que el jugador tenga que recargar toda la página para poder seguir jugando.
+setInterval(() => {
+  if(spinning && typeof window.__spinStuckSince !== 'number'){
+    window.__spinStuckSince = Date.now();
+  } else if(!spinning){
+    window.__spinStuckSince = null;
+  }
+  if(spinning && window.__spinStuckSince && (Date.now() - window.__spinStuckSince > 10000)){
+    spinning = false;
+    window.__spinStuckSince = null;
+    const btn = document.getElementById('spinBtn');
+    if(btn){ btn.disabled = false; btn.textContent = 'GIRAR PARA ESTE PARTIDO'; }
+    console.warn('La ruleta quedó trabada más de 10s; se liberó automáticamente sin recargar la página.');
+  }
+}, 2000);
 
 // ------------------ ALERTA GRANDE DEL EVENTO (no navega ni hace scroll) ------------------
 // ------------------ ALERTAS "META" (crisis/celebraciones no atadas a un partido puntual) ------------------
@@ -4815,8 +4971,8 @@ const DECISION_CONFIGS = {
     { key:'descanso', label:`Que no arriesgue, se queda afuera`, effects:{}, mood:-3, note:`${ev.playerName} descansa este partido para no agravar la molestia.` },
   ],
   sancion: (ev) => [
-    { key:'ambos', label:'Sancionar a los dos por igual', effects:{clubRelation:+4, playerRelation:-6}, moodBoth:-8, note:'Sancionaste a los dos jugadores por igual.' },
-    { key:'uno', label:'Sancionar solo al que lo empezó', effects:{clubRelation:+1, playerRelation:-2}, moodSplit:[-10,+3], note:'Sancionaste solo a uno de los dos.' },
+    { key:'ambos', label:'Sancionar a los dos por igual', effects:{clubRelation:+4, playerRelation:-6}, moodBoth:-8, sidelineMatches:1, sidelineAll:true, sidelineReason:'sancionado tras la pelea', note:'Sancionaste a los dos jugadores por igual: ninguno de los dos va a estar disponible para el próximo partido.' },
+    { key:'uno', label:'Sancionar solo al que lo empezó', effects:{clubRelation:+1, playerRelation:-2}, moodSplit:[-10,+3], sidelineMatches:1, sidelineIndex:0, sidelineReason:'sancionado tras la pelea', note:'Sancionaste solo a uno de los dos: no vas a poder contar con él en el próximo partido.' },
     { key:'nada', label:'Dejarlo pasar puertas adentro', effects:{clubRelation:-3, playerRelation:+3}, moodBoth:+2, note:'Decidiste no sancionar a nadie.' },
   ],
   renovar: (ev) => [
@@ -5153,11 +5309,11 @@ const DECISION_CONFIGS = {
     { key:'dejar_solos', label:'Dejar que lo resuelvan solos', effects:{playerRelation:-1}, moodBoth:-1, note:'Preferiste no meterte en una pavada, aunque quedó cierta tensión en el aire.' },
   ],
   llegada_tarde: () => [
-    { key:'amonestar_tarde', label:'Amonestarlo formalmente', effects:{playerRelation:-3, clubRelation:2}, mood:-4, note:'Le dejaste en claro que no puede repetirse.' },
+    { key:'amonestar_tarde', label:'Amonestarlo formalmente', effects:{playerRelation:-3, clubRelation:2}, mood:-4, sidelineMatches:1, sidelineReason:'amonestado por llegadas tarde', note:'Le dejaste en claro que no puede repetirse: no lo vas a poder convocar en el próximo partido.' },
     { key:'vista_gorda', label:'Hacer la vista gorda una vez más', effects:{playerRelation:2, clubRelation:-2}, mood:3, note:'Decidiste no hacer olas por esta vez.' },
   ],
   fiesta: () => [
-    { key:'sancionar_fiesta', label:'Sancionarlo por la salida', effects:{playerRelation:-3, clubRelation:2}, mood:-4, note:'Aplicaste una sanción por la falta de profesionalismo.' },
+    { key:'sancionar_fiesta', label:'Sancionarlo por la salida', effects:{playerRelation:-3, clubRelation:2}, mood:-4, sidelineMatches:1, sidelineReason:'sancionado por la salida nocturna', note:'Aplicaste una sanción por la falta de profesionalismo: se pierde el próximo partido.' },
     { key:'dejar_pasar_fiesta', label:'Dejarlo pasar', effects:{playerRelation:2, clubRelation:-1}, mood:2, note:'Preferiste no hacer un escándalo por esta vez.' },
   ],
   sobrepeso: () => [
@@ -5219,7 +5375,7 @@ const DECISION_CONFIGS = {
     { key:'sancionar_utilero', label:'Reforzar los protocolos y sancionar al responsable', effects:{clubRelation:1, personality:1}, mood:-1, note:'Exigiste que esto no vuelva a pasar.' },
   ],
   fumar_vestuario: () => [
-    { key:'sancionar_fumar_vestuario', label:'Sancionarlo con dureza', effects:{playerRelation:-3, clubRelation:3}, mood:-5, note:'Aplicaste una sanción ejemplar por fumar dentro del vestuario.' },
+    { key:'sancionar_fumar_vestuario', label:'Sancionarlo con dureza', effects:{playerRelation:-3, clubRelation:3}, mood:-5, sidelineMatches:1, sidelineReason:'sancionado por fumar en el vestuario', note:'Aplicaste una sanción ejemplar: no va a estar disponible para el próximo partido.' },
     { key:'hablar_privado_fumar', label:'Hablarlo en privado sin trascendencia', effects:{playerRelation:2, clubRelation:-1}, mood:2, note:'Preferiste manejarlo puertas adentro sin escalar el conflicto.' },
   ],
   tatuaje_aguila: () => [
@@ -5321,6 +5477,17 @@ function decideOutcome(key){
     markPlayerOut(ev.playerId, o.sidelineMatches, o.sidelineReason || 'sancionado');
     renderPlayers();
   }
+  // Pedido del usuario: "siguen existiendo eventos que son meros avisos, no tienen consecuencia
+  // que x jugador no pueda estar". Para eventos de DOS jugadores (peleas, etc.), esto permite que
+  // sancionar realmente los deje afuera del próximo partido, no solo un cambio cosmético de stats.
+  if(o.sidelineMatches && o.sidelineAll && ev.playerIds){
+    ev.playerIds.forEach(pid => markPlayerOut(pid, o.sidelineMatches, o.sidelineReason || 'sancionado'));
+    renderPlayers();
+  }
+  if(o.sidelineMatches && o.sidelineIndex !== undefined && ev.playerIds && ev.playerIds[o.sidelineIndex] !== undefined){
+    markPlayerOut(ev.playerIds[o.sidelineIndex], o.sidelineMatches, o.sidelineReason || 'sancionado');
+    renderPlayers();
+  }
   if(o.leaveRiskDelta !== undefined && ev.playerId){
     adjustLeaveRisk(ev.playerId, o.leaveRiskDelta);
   }
@@ -5399,9 +5566,16 @@ const PRIORITY_BONUS = {
   medio:       { clubRelation:6,  fanRelation:6,  playerRelation:4 },
   bajo:        { clubRelation:3,  fanRelation:3,  playerRelation:2 },
 };
+// Pedido del usuario: "si no se cumple un objetivo de grado medio, que tenga más influencia en
+// las barras, sobre todo la dirigencia". El castigo de "medio" era demasiado parecido al de
+// "bajo" en proporción a lo que sube si se cumple (PRIORITY_BONUS.medio es el doble de
+// PRIORITY_BONUS.bajo, pero el castigo por no cumplirlo apenas más que duplicaba el de bajo).
+// Ahora un objetivo medio incumplido pega bastante más fuerte, con la dirigencia (clubRelation)
+// como la más golpeada, y queda más claramente diferenciado de "bajo" y más cerca (sin igualar)
+// de "obligatorio".
 const PRIORITY_PENALTY = {
   obligatorio: { clubRelation:-15, fanRelation:-15, playerRelation:-8 },
-  medio:       { clubRelation:-8,  fanRelation:-8,  playerRelation:-5 },
+  medio:       { clubRelation:-13, fanRelation:-10, playerRelation:-6 },
   bajo:        { clubRelation:-3,  fanRelation:-3,  playerRelation:-2 },
 };
 
@@ -5417,7 +5591,12 @@ function applyObjectiveOutcome(comp, objective, priority, met, result, midSeason
     objective,
     priority,
     met,
-    trophy: met ? result : '',
+    // Pedido del usuario: "si cumplo un objetivo de llegar a semifinales, que no me lo ponga
+    // como palmarés porque no es un título. Que solo sume palmarés cuando salí campeón". Antes
+    // esto se guardaba como "trophy" (mostrado como "— Campeón: ...") para CUALQUIER objetivo
+    // cumplido, no solo ganar el título -- de ahí que llegar a semis apareciera como si fuese un
+    // título. Ahora "trophy" solo se completa cuando el objetivo era, de verdad, ganar el título.
+    trophy: (met && objective === 'Ganar el título') ? result : '',
     position: result,
     midSeason: !!midSeason
   });
@@ -5462,7 +5641,8 @@ function renderCloseSeasonRows(){
       return `
       <div class="card" style="margin-bottom:10px; padding:14px 16px;">
         <div style="font-weight:700; margin-bottom:4px;">${c.name} <span class="dateline" style="font-weight:400;">· ${PRIORITY_LABELS[c.priority]}</span></div>
-        <div class="dateline">✅ Ya registrado esta temporada (${resolved[c.name]}). No hace falta volver a evaluarlo al cerrar la temporada.</div>
+        <div class="dateline" style="margin-bottom:8px;">✅ Ya registrado esta temporada (${resolved[c.name]}). No hace falta volver a evaluarlo al cerrar la temporada.</div>
+        <button class="link-btn" type="button" style="color:var(--alert);" onclick="undoResolvedObjective('${c.name.replace(/'/g,"\\'")}')">Deshacer este registro</button>
       </div>`;
     }
     return `
@@ -5524,6 +5704,24 @@ function markObjectiveNow(comp, met){
   if(wonTitle && document.getElementById('eventAlertModal').style.display !== 'flex'){
     showTitleCelebration(comp);
   }
+}
+
+// Pedido del usuario: poder eliminar/deshacer un registro "ya registrado esta temporada" (marcado
+// con markObjectiveNow) sin tener que esperar al cierre de temporada ni ir a buscarlo en el
+// historial de objetivos. Saca la marca de "resuelto a mitad de temporada" para esa competencia
+// (así vuelve a aparecer con los selectores para cargarlo de nuevo) y borra el registro más
+// reciente que se haya guardado para esa competencia+temporada como registro a mitad de
+// temporada. Igual que deleteTrophy, a propósito NO deshace el efecto que ya tuvo en las barras.
+function undoResolvedObjective(comp){
+  if(!confirm(`¿Deshacer el registro de "${comp}" de esta temporada? Vas a poder volver a cargarlo. Esto no deshace el efecto que ya tuvo en tus barras.`)) return;
+  if(state.profile.competitionResolvedThisSeason) delete state.profile.competitionResolvedThisSeason[comp];
+  const season = state.season.year || '—';
+  const idx = state.trophies.findIndex(t => t.competition === comp && t.season === season && t.midSeason);
+  if(idx !== -1) state.trophies.splice(idx, 1);
+  renderTrophies();
+  renderTrophyCabinet();
+  renderCloseSeasonRows();
+  persist();
 }
 
 document.getElementById('closeSeasonBtn').addEventListener('click', () => {
@@ -5638,14 +5836,15 @@ function cancelTrophyEdit(){
   editingTrophyIdx = null;
   renderTrophies();
 }
-// Elimina un registro del palmarés. A propósito NO deshace el efecto que ya tuvo en las barras
-// en su momento (por la misma razón que editar no reaplica el efecto): permitir eso abriría la
-// puerta a "farmear" relación registrando y borrando títulos a repetición. Esto es solo para
-// sacar del historial un registro cargado por error (competencia equivocada, duplicado, etc.).
+// Elimina un registro del historial de objetivos. A propósito NO deshace el efecto que ya tuvo
+// en las barras en su momento (por la misma razón que editar no reaplica el efecto): permitir
+// eso abriría la puerta a "farmear" relación registrando y borrando resultados a repetición.
+// Esto es solo para sacar del historial un registro cargado por error (competencia equivocada,
+// duplicado, etc.).
 function deleteTrophy(idx){
   const t = state.trophies[idx];
   if(!t) return;
-  if(!confirm(`¿Eliminar el registro de "${t.competition || 'esta competencia'}" (Temporada ${t.season}) del palmarés? Esto no deshace el efecto que ya tuvo en tus barras, solo saca el registro del historial.`)) return;
+  if(!confirm(`¿Eliminar el registro de "${t.competition || 'esta competencia'}" (Temporada ${t.season}) del historial de objetivos? Esto no deshace el efecto que ya tuvo en tus barras, solo saca el registro del historial.`)) return;
   state.trophies.splice(idx, 1);
   if(editingTrophyIdx === idx) editingTrophyIdx = null;
   else if(editingTrophyIdx !== null && editingTrophyIdx > idx) editingTrophyIdx -= 1;
@@ -5659,7 +5858,9 @@ function saveTrophyEdit(idx){
   const met = document.getElementById('editTrophyMet').value === 'si';
   const result = document.getElementById('editTrophyResult').value.trim();
   t.met = met;
-  t.trophy = met ? result : '';
+  // Igual que en applyObjectiveOutcome: solo cuenta como "Campeón"/palmarés si el objetivo
+  // registrado era realmente ganar el título, no cualquier objetivo cumplido.
+  t.trophy = (met && t.objective === 'Ganar el título') ? result : '';
   t.position = result;
   editingTrophyIdx = null;
   renderTrophies();
