@@ -685,7 +685,7 @@
     <div class="masthead">GRAN&nbsp;<span>MANAGER</span></div>
     <div style="text-align:right;">
       <div class="dateline" id="dateline"></div>
-      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build STABFIX-11</div>
+      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build OBJEDIT-12</div>
       <div class="dateline" id="userLine" style="margin-top:4px;">
         <span id="userLabel"></span><span id="frenzyBadge" style="display:none; color:var(--alert); font-weight:700;"> · 🔥 FRENÉTICO</span> · <button class="link-btn" id="manualSaveBtn" title="Forzar guardado de la partida">💾 Guardar</button> · <button class="link-btn" id="exportSaveBtn" title="Descargar una copia de seguridad como archivo">⬇️ Copia</button> · <button class="link-btn" id="importSaveBtn" title="Restaurar una copia de seguridad desde archivo">⬆️ Restaurar</button><input type="file" id="importSaveInput" accept="application/json" style="display:none;"> · <button class="link-btn" id="logoutBtn">Cerrar sesión</button>
       </div>
@@ -1565,46 +1565,59 @@ const OBJECTIVE_OPTIONS = [
   'Sin objetivo definido',
 ];
 
+// Bug real / pedido del usuario: antes, una vez guardado el perfil, los objetivos por
+// competencia quedaban "bloqueados" (objectivesLocked) y hacía falta un botón extra de
+// "Editar objetivos" para poder tocar cualquiera, incluso para simplemente definir un objetivo
+// en una competencia que todavía decía "Sin objetivo definido". Ahora los selects quedan
+// siempre habilitados y cada cambio se guarda al toque (igual que ya hacía el checkbox de "no
+// se disputa esta temporada"), así se puede agregar o cambiar un objetivo en cualquier momento
+// de la temporada, no solo al armar el perfil.
 function renderObjectivesByComp(competitions){
   const list = document.getElementById('dtObjectivesList');
-  const locked = !!state.profile.objectivesLocked;
   const notPlayed = state.profile.competitionNotPlayed || {};
   list.innerHTML = competitions.map(c => {
     const current = state.profile.competitionObjectives[c] || '';
     const currentPriority = (state.profile.competitionPriority && state.profile.competitionPriority[c]) || 'medio';
     const isNotPlayed = !!notPlayed[c];
+    const compEscaped = c.replace(/'/g,"\\'");
     return `
     <div class="field-row" style="margin-bottom:8px;">
       <div style="grid-column:1/-1; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
         <label style="min-width:180px; margin:0;">${c}</label>
-        <select class="comp-objective-select" data-comp="${c}" style="flex:1; min-width:180px;" ${locked||isNotPlayed?'disabled':''}>
+        <select class="comp-objective-select" data-comp="${c}" style="flex:1; min-width:180px;" ${isNotPlayed?'disabled':''} onchange="updateCompObjective('${compEscaped}', this.value)">
           ${OBJECTIVE_OPTIONS.map(o => `<option value="${o}" ${o===current?'selected':''}>${o}</option>`).join('')}
         </select>
-        <select class="comp-priority-select" data-comp="${c}" style="min-width:150px;" ${locked||isNotPlayed?'disabled':''}>
+        <select class="comp-priority-select" data-comp="${c}" style="min-width:150px;" ${isNotPlayed?'disabled':''} onchange="updateCompPriority('${compEscaped}', this.value)">
           <option value="obligatorio" ${currentPriority==='obligatorio'?'selected':''}>🔴 Obligatorio</option>
           <option value="medio" ${currentPriority==='medio'?'selected':''}>🟡 Nivel medio</option>
           <option value="bajo" ${currentPriority==='bajo'?'selected':''}>🟢 Nivel bajo</option>
         </select>
         <label style="display:flex; align-items:center; gap:6px; min-width:auto; font-weight:400; opacity:0.85;">
-          <input type="checkbox" class="comp-notplayed-check" data-comp="${c}" ${isNotPlayed?'checked':''} ${locked?'disabled':''} onchange="toggleCompNotPlayed('${c.replace(/'/g,"\\'")}', this.checked)">
+          <input type="checkbox" class="comp-notplayed-check" data-comp="${c}" ${isNotPlayed?'checked':''} onchange="toggleCompNotPlayed('${compEscaped}', this.checked)">
           No se disputa esta temporada
         </label>
       </div>
     </div>`;
   }).join('') + `
     <div class="dateline" style="margin-top:6px;">
-      ${locked
-        ? `🔒 Objetivos bloqueados por la dirigencia para esta temporada. <button class="link-btn" id="unlockObjectivesBtn" type="button">Editar objetivos</button>`
-        : `Una vez que guardes el perfil, estos objetivos quedan fijados para toda la temporada. El nivel marca qué tan grave es no cumplirlo: un objetivo "Obligatorio" incumplido puede costarte el puesto.`}
+      Podés cambiar el objetivo o el nivel de cualquier competencia en el momento que quieras durante la temporada, no hace falta esperar a armar el perfil. El nivel marca qué tan grave es no cumplirlo: un objetivo "Obligatorio" incumplido puede costarte el puesto.
     </div>`;
-  if(locked){
-    document.getElementById('unlockObjectivesBtn').addEventListener('click', () => {
-      if(confirm('¿Seguro que querés modificar los objetivos ya fijados por la dirigencia esta temporada?')){
-        state.profile.objectivesLocked = false;
-        renderObjectivesByComp(competitions);
-      }
-    });
-  }
+}
+
+// Cambia el objetivo de una competencia al toque (sin esperar a "Guardar perfil"), para poder
+// definir o corregir un objetivo en cualquier momento de la temporada.
+function updateCompObjective(comp, value){
+  if(!state.profile.competitionObjectives) state.profile.competitionObjectives = {};
+  state.profile.competitionObjectives[comp] = value;
+  state.profile.goal = Object.entries(state.profile.competitionObjectives).map(([c,o])=>`${c}: ${o}`).join(' · ');
+  renderCloseSeasonRows();
+  persist();
+}
+function updateCompPriority(comp, value){
+  if(!state.profile.competitionPriority) state.profile.competitionPriority = {};
+  state.profile.competitionPriority[comp] = value;
+  renderCloseSeasonRows();
+  persist();
 }
 
 // Marca/desmarca una competencia como "no se disputa esta temporada" (por ejemplo, un club
@@ -1669,7 +1682,6 @@ document.getElementById('saveProfile').addEventListener('click', () => {
     });
     state.profile.competitionPriority = priorities;
     state.profile.goal = Object.entries(objectives).map(([c,o])=>`${c}: ${o}`).join(' · ');
-    state.profile.objectivesLocked = true;
   } else {
     state.profile.club = document.getElementById('dtClub').value.trim();
     state.profile.league = 'Personalizada';
@@ -5459,7 +5471,7 @@ function renderCloseSeasonRows(){
       <div class="dateline" style="margin-bottom:10px;">Objetivo: ${c.objective}</div>
       <div class="field-row">
         <div>
-          <label>¿Se cumplió?</label>
+          <label>¿Se cumplió? (para el cierre de temporada)</label>
           <select class="close-season-met" data-comp="${c.name}" data-objective="${c.objective}" data-priority="${c.priority}">
             <option value="si">Sí, se cumplió</option>
             <option value="no">No, no se cumplió</option>
@@ -5470,20 +5482,29 @@ function renderCloseSeasonRows(){
           <input class="close-season-result" data-comp="${c.name}" type="text" placeholder="Ej: Campeón, 4°, Semifinales">
         </div>
       </div>
-      <button class="btn ghost small" type="button" style="margin-top:10px;" onclick="markObjectiveNow('${c.name.replace(/'/g,"\\'")}')">✅ Ya se cumplió: registrarlo ahora (no esperar al cierre)</button>
+      <div class="dateline" style="margin-top:8px;">O registralo ya mismo, sin esperar al cierre de temporada (por ejemplo, si ya quedaste eliminado o ya no hay forma de alcanzarlo):</div>
+      <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;">
+        <button class="btn ghost small" type="button" onclick="markObjectiveNow('${c.name.replace(/'/g,"\\'")}', true)">✅ Marcar como cumplido ahora</button>
+        <button class="btn ghost small" type="button" style="border-color:var(--alert); color:var(--alert);" onclick="markObjectiveNow('${c.name.replace(/'/g,"\\'")}', false)">❌ Marcar como no cumplido ahora</button>
+      </div>
     </div>`;
   }).join('');
 }
 
 // Registra el objetivo de UNA competencia en el momento (mitad de temporada), sin esperar a
-// "Cerrar temporada". Usa los mismos valores que ya haya cargados en esa fila (sí/no cumplido
-// + resultado); por defecto asume que se cumplió, ya que el botón dice explícitamente eso.
-function markObjectiveNow(comp){
+// "Cerrar temporada".
+//
+// Bug real / pedido del usuario: antes había un solo botón ("Ya se cumplió: registrarlo ahora")
+// que en realidad miraba el valor del select "¿Se cumplió?" de al lado -- si alguien no tocaba
+// ese select (que arranca en "Sí, se cumplió" por defecto), terminaba registrando SIEMPRE como
+// cumplido sin darse cuenta, y no había ninguna forma obvia de anticipar un "no cumplido" antes
+// del cierre de temporada. Ahora `met` se recibe explícito desde dos botones separados, sin
+// depender del estado del select (que queda solo para el cierre final de temporada).
+function markObjectiveNow(comp, met){
   const sel = document.querySelector(`.close-season-met[data-comp="${CSS.escape(comp)}"]`);
   if(!sel) return;
   const objective = sel.dataset.objective;
   const priority = sel.dataset.priority || 'medio';
-  const met = sel.value === 'si';
   const resultInput = document.querySelector(`.close-season-result[data-comp="${CSS.escape(comp)}"]`);
   const result = resultInput ? resultInput.value.trim() : '';
   if(met && !result){
@@ -5603,6 +5624,7 @@ function renderTrophies(){
       <div style="display:flex; align-items:center; gap:8px;">
         <div class="status-tag ${t.met ? 'jugado' : ''}" style="${!t.met ? 'color:var(--alert); border-color:var(--alert);' : ''}">${t.met ? 'cumplido' : 'no cumplido'}</div>
         <button class="link-btn" type="button" onclick="editTrophy(${idx})">Editar</button>
+        <button class="link-btn" type="button" style="color:var(--alert);" onclick="deleteTrophy(${idx})">Eliminar</button>
       </div>
     </div>`;
   }).join('');
@@ -5615,6 +5637,21 @@ function editTrophy(idx){
 function cancelTrophyEdit(){
   editingTrophyIdx = null;
   renderTrophies();
+}
+// Elimina un registro del palmarés. A propósito NO deshace el efecto que ya tuvo en las barras
+// en su momento (por la misma razón que editar no reaplica el efecto): permitir eso abriría la
+// puerta a "farmear" relación registrando y borrando títulos a repetición. Esto es solo para
+// sacar del historial un registro cargado por error (competencia equivocada, duplicado, etc.).
+function deleteTrophy(idx){
+  const t = state.trophies[idx];
+  if(!t) return;
+  if(!confirm(`¿Eliminar el registro de "${t.competition || 'esta competencia'}" (Temporada ${t.season}) del palmarés? Esto no deshace el efecto que ya tuvo en tus barras, solo saca el registro del historial.`)) return;
+  state.trophies.splice(idx, 1);
+  if(editingTrophyIdx === idx) editingTrophyIdx = null;
+  else if(editingTrophyIdx !== null && editingTrophyIdx > idx) editingTrophyIdx -= 1;
+  renderTrophies();
+  renderTrophyCabinet();
+  persist();
 }
 function saveTrophyEdit(idx){
   const t = state.trophies[idx];
