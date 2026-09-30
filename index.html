@@ -59,6 +59,28 @@
 
   .wrap{ max-width: 860px; margin:0 auto; position:relative; }
 
+  /* Pedido del usuario: un código de versión que se vea SIEMPRE, en cualquier pantalla/pestaña
+  y sin tener que scrollear hasta el header, para poder comparar a simple vista si el celular y
+  la PC están corriendo el mismo archivo. Fijo arriba a la derecha, por encima de todo, y
+  presente tanto en el login como dentro del juego. */
+  #buildBadge{
+    position: fixed;
+    top: 8px;
+    right: 10px;
+    z-index: 99999;
+    background: rgba(10,14,20,0.72);
+    color: var(--pitch);
+    font-family:'Barlow Condensed', sans-serif;
+    font-weight:600;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    padding: 3px 9px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.15);
+    pointer-events: none;
+    opacity: 0.9;
+  }
+
   header{
     border-bottom: 1px solid var(--surface-border);
     padding-bottom: 18px;
@@ -547,6 +569,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 </head>
 <body>
+<div id="buildBadge"></div>
 <div class="bg-blobs"><div class="b1"></div><div class="b2"></div><div class="b3"></div></div>
 
 <div id="loginScreen">
@@ -685,7 +708,7 @@
     <div class="masthead">GRAN&nbsp;<span>MANAGER</span></div>
     <div style="text-align:right;">
       <div class="dateline" id="dateline"></div>
-      <div class="dateline" style="margin-top:2px; opacity:0.5; font-size:11px;">build RULEBATCH-13</div>
+      <div class="dateline" id="headerBuildLine" style="margin-top:2px; opacity:0.5; font-size:11px;"></div>
       <div class="dateline" id="userLine" style="margin-top:4px;">
         <span id="userLabel"></span><span id="frenzyBadge" style="display:none; color:var(--alert); font-weight:700;"> · 🔥 FRENÉTICO</span> · <button class="link-btn" id="manualSaveBtn" title="Forzar guardado de la partida">💾 Guardar</button> · <button class="link-btn" id="exportSaveBtn" title="Descargar una copia de seguridad como archivo">⬇️ Copia</button> · <button class="link-btn" id="importSaveBtn" title="Restaurar una copia de seguridad desde archivo">⬆️ Restaurar</button><input type="file" id="importSaveInput" accept="application/json" style="display:none;"> · <button class="link-btn" id="logoutBtn">Cerrar sesión</button>
       </div>
@@ -1190,6 +1213,16 @@
 </div>
 
 <script>
+// ------------------ CÓDIGO DE VERSIÓN (para comparar celular vs. PC a simple vista) ------------------
+// Pedido del usuario: un único punto de verdad para el código de build, que se vea SIEMPRE en
+// una esquina fija de la pantalla (#buildBadge) además de en el header de adentro del juego
+// (#headerBuildLine), para poder confirmar sin dudas si dos dispositivos están corriendo el
+// mismo archivo. Para la próxima entrega, alcanza con cambiar este único string.
+const BUILD_ID = 'RULEBATCH-13';
+document.getElementById('buildBadge').textContent = BUILD_ID;
+const headerBuildLineEl = document.getElementById('headerBuildLine');
+if(headerBuildLineEl) headerBuildLineEl.textContent = `build ${BUILD_ID}`;
+
 // ------------------ BASE DE DATOS DE LIGAS Y CLUBES REALES (temporada 2026/27) ------------------
 const LEAGUE_DB = {
   'Premier League': {
