@@ -653,7 +653,7 @@
     </div>
     <div class="f" style="margin-top:10px;">
       <label>Fecha</label>
-      <input id="editMatchDate" type="text" placeholder="Ej: 14 sep" autocomplete="off">
+      <input id="editMatchDate" type="date">
     </div>
     <div class="f" style="margin-top:10px;">
       <label>Importancia / Fase</label>
@@ -864,7 +864,7 @@
         </div>
         <div>
           <label>Posición</label>
-          <input id="standingPos" type="text" placeholder="Ej: 2°" autocomplete="off">
+          <input id="standingPos" type="text" placeholder="Ej: puntero, top5, semifinal, campeon (ver las opciones fijas de cada competencia más abajo)" autocomplete="off">
         </div>
       </div>
       <button class="btn ghost" id="addStanding">Guardar posición</button>
@@ -892,17 +892,16 @@
       <button class="btn ghost" id="closeSeasonBtn" style="margin-top:10px;">Cerrar temporada y evaluar</button>
     </div>
 
-    <div class="section-title">Historial de objetivos por temporada</div>
-    <!-- Esta sección se había sacado por pedido del usuario, pero volvió a pedido del usuario
-    después de encontrar registros fantasma (títulos/objetivos que nunca se cumplieron de
-    verdad, generados por el bug de "Cerrar temporada" ya corregido más arriba): acá se puede
-    revisar, editar y ELIMINAR cualquier registro para corregir datos que hayan quedado mal por
-    algún bug, sin tener que perder el resto de la partida. No se llama "Palmarés" a propósito:
-    acá se anota CUALQUIER objetivo cerrado (cumplido o no), no solo títulos -- el palmarés real
-    sigue siendo "🏆 Vitrina de títulos" en Perfil del DT, que ya cuenta solo los títulos de
-    verdad. -->
+    <div class="section-title">Títulos</div>
+    <!-- Pedido del usuario: "el historial de objetivos cumplidos tampoco me interesa que
+    figure... solo títulos". Por dentro, state.trophies sigue guardando CUALQUIER objetivo
+    cerrado (cumplido o no, de cualquier prioridad) porque de ahí salen los efectos en las
+    barras -- esta sección solo MUESTRA los títulos reales (renderTrophies filtra por t.trophy),
+    para poder revisar, editar y ELIMINAR un título mal registrado por algún bug (fue justamente
+    así como se encontraron los títulos fantasma de "Cerrar temporada", ya corregido), sin perder
+    esa red de seguridad ni volver a mostrar cada objetivo cumplido/no cumplido como antes. -->
     <div class="match-list" id="trophyList"></div>
-    <div id="trophyEmpty" class="empty-note">Todavía no se cerró ninguna temporada.</div>
+    <div id="trophyEmpty" class="empty-note">Todavía no se ganó ningún título.</div>
   </section>
 
   <!-- CARRERA / CAMBIO DE CLUB -->
@@ -1110,7 +1109,7 @@
       </div>
       <div class="f">
         <label>Fecha</label>
-        <input id="mDate" type="text" placeholder="Ej: 14 sep" autocomplete="off">
+        <input id="mDate" type="date">
       </div>
       <div class="f">
         <label>Importancia / Fase</label>
@@ -1175,6 +1174,7 @@
 
         <div id="matchResultForm" style="display:none;">
           <div class="section-title">Cargar resultado</div>
+          <div id="tieAggregateNote" class="dateline" style="display:none; margin-bottom:8px;"></div>
           <div class="score-inputs">
             <span id="scoreClubLabel">Club</span>
             <input type="text" id="scoreHome" placeholder="0" maxlength="2">
@@ -1232,7 +1232,7 @@
 // una esquina fija de la pantalla (#buildBadge) además de en el header de adentro del juego
 // (#headerBuildLine), para poder confirmar sin dudas si dos dispositivos están corriendo el
 // mismo archivo. Para la próxima entrega, alcanza con cambiar este único string.
-const BUILD_ID = 'RULEBATCH-18';
+const BUILD_ID = 'RULEBATCH-19';
 document.getElementById('buildBadge').textContent = BUILD_ID;
 const headerBuildLineEl = document.getElementById('headerBuildLine');
 if(headerBuildLineEl) headerBuildLineEl.textContent = `build ${BUILD_ID}`;
@@ -1313,6 +1313,60 @@ function rivalPoolFor(competition){
 const CUP_COMPETITIONS = new Set(['FA Cup','EFL Cup','Copa del Rey','Coppa Italia','DFB-Pokal','Copa de Francia','Copa Argentina','Champions League','Europa League','Conference League','Copa Libertadores','Copa Sudamericana','Concachampions','Leagues Cup','US Open Cup','Copa del Mundo','Copa Continental','Copa del Rey de Arabia Saudita','Supercopa de Arabia Saudita','Champions League Asiática']);
 const FRIENDLY_COMPETITIONS = new Set(['Amistoso Internacional']);
 
+// Pedido del usuario: "que todo salga seccionado... porque si yo escribo que voy primero no sé
+// si la web me toma como que estoy bien". Antes "Posiciones actuales" era texto libre, y
+// classifyStanding/objectiveProgress trataban de adivinarlo con expresiones regulares -- lo que
+// el usuario escribiera tenía que "calzar" con un patrón esperado o la prensa/el semáforo de
+// objetivos no lo entendían. Ahora son opciones fijas (un <select>), una lista para ligas (por
+// posición en la tabla) y otra para copas (por fase), así SIEMPRE se puede clasificar bien.
+const LEAGUE_STANDING_BUCKETS = [
+  { value:'puntero',    label:'Puntero / 1°',                 rank:0, level:'excelente' },
+  { value:'top5',        label:'Entre los puestos 2 y 5',       rank:2, level:'buena' },
+  { value:'top10',       label:'Entre los puestos 6 y 10',      rank:4, level:'neutral' },
+  { value:'zona_media',  label:'Zona media de la tabla',        rank:5, level:'neutral' },
+  { value:'descenso',    label:'Zona de descenso',              rank:6, level:'mala' },
+  { value:'descendido',  label:'Descendido',                    rank:7, level:'mala' },
+];
+const CUP_STANDING_BUCKETS = [
+  { value:'no_juega',    label:'No se juega / No clasificó',    rank:null, level:null },
+  { value:'fase_grupos', label:'Fase de grupos',                rank:5, level:'mala' },
+  { value:'octavos',     label:'Octavos de final',              rank:4, level:'mala' },
+  { value:'cuartos',     label:'Cuartos de final',              rank:3, level:'neutral' },
+  { value:'semifinal',   label:'Semifinal',                     rank:2, level:'buena' },
+  { value:'final',       label:'Final',                         rank:1, level:'excelente' },
+  { value:'campeon',     label:'Campeón',                       rank:0, level:'excelente' },
+  { value:'eliminado',   label:'Eliminado',                     rank:6, level:'mala' },
+];
+const STANDING_BUCKETS = { liga: LEAGUE_STANDING_BUCKETS, copa: CUP_STANDING_BUCKETS, amistoso: LEAGUE_STANDING_BUCKETS };
+// Mapa combinado value -> info, para clasificar sin necesidad de saber si es liga o copa (los
+// valores de las dos listas no se pisan entre sí).
+const STANDING_BUCKET_INFO = {};
+LEAGUE_STANDING_BUCKETS.concat(CUP_STANDING_BUCKETS).forEach(b => { STANDING_BUCKET_INFO[b.value] = b; });
+// Para partidas viejas que ya tenían texto libre guardado en state.standings: se muestra tal
+// cual (no se pierde lo que el usuario ya había cargado), pero no se puede clasificar hasta que
+// se vuelva a guardar con el selector nuevo -- se avisa en la propia pantalla.
+function standingLabel(posValue){
+  if(!posValue) return '—';
+  const info = STANDING_BUCKET_INFO[posValue];
+  return info ? info.label : posValue;
+}
+
+// Pedido del usuario: "en calendario de partidos estaría bueno que ya estén las fechas
+// determinadas como en un cuadro calendario... en vez de escribir el día a mano". Los campos de
+// fecha pasaron a ser <input type="date">, que guardan "AAAA-MM-DD". Esta función lo muestra
+// como fecha legible ("14 sep"), igual que se veía antes a mano. Las partidas viejas que ya
+// tenían fecha en texto libre (de antes de este cambio) se siguen mostrando tal cual -- no hace
+// falta volver a cargarlas para que se vean bien.
+const SHORT_MONTHS_ES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+function formatMatchDate(dateStr){
+  if(!dateStr) return '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if(!m) return dateStr;
+  const day = parseInt(m[3], 10);
+  const month = SHORT_MONTHS_ES[parseInt(m[2], 10) - 1] || '';
+  return `${day} ${month}`;
+}
+
 function competitionKind(comp){
   if(FRIENDLY_COMPETITIONS.has(comp)) return 'amistoso';
   if(CUP_COMPETITIONS.has(comp)) return 'copa';
@@ -1335,16 +1389,86 @@ const IMPORTANCE_OPTIONS = {
     { value:'semifinal_playoff', label:'Semifinal (playoff)', mult:2.2 },
     { value:'final_playoff', label:'Final / Gran Final (playoff)', mult:2.8 },
   ],
+  // Pedido del usuario: "la sección eliminación directa es lo mismo que semifinal" -- antes
+  // "ida"/"vuelta" eran genéricos, sin aclarar de qué fase (octavos, cuartos...) se trataba,
+  // lo que confundía con las fases ya nombradas (Semifinal, Final). Ahora cada fase de copa
+  // tiene sus propias opciones: partido único (para copas que lo juegan a partido único, como
+  // la final de la Libertadores desde 2019) o ida/vuelta (para las que se definen por global de
+  // la serie). Los multiplicadores de "vuelta" son más altos que los de "ida" -- definen la
+  // serie -- y suben fase a fase, para que un partido de copa pese bastante más que uno de liga
+  // equivalente (pedido del usuario: "que todo partido de copa sea más importante").
   copa: [
-    { value:'fase_grupos', label:'Fase de grupos', mult:0.8 },
-    { value:'ida', label:'Eliminación directa (ida)', mult:1.3 },
-    { value:'vuelta', label:'Eliminación directa (vuelta)', mult:1.6 },
-    { value:'semifinal', label:'Semifinal', mult:1.9 },
-    { value:'final', label:'Final', mult:2.6 },
+    { value:'fase_grupos', label:'Fase de grupos', mult:0.9 },
+    { value:'octavos_unico',    label:'Octavos de final — partido único', mult:1.6 },
+    { value:'octavos_ida',      label:'Octavos de final — ida', mult:1.3 },
+    { value:'octavos_vuelta',   label:'Octavos de final — vuelta', mult:1.7 },
+    { value:'cuartos_unico',    label:'Cuartos de final — partido único', mult:1.9 },
+    { value:'cuartos_ida',      label:'Cuartos de final — ida', mult:1.5 },
+    { value:'cuartos_vuelta',   label:'Cuartos de final — vuelta', mult:2.0 },
+    { value:'semifinal_unico',  label:'Semifinal — partido único', mult:2.3 },
+    { value:'semifinal_ida',    label:'Semifinal — ida', mult:1.8 },
+    { value:'semifinal_vuelta', label:'Semifinal — vuelta', mult:2.5 },
+    { value:'final_unico',      label:'Final — partido único', mult:3.0 },
+    { value:'final_ida',        label:'Final — ida', mult:2.4 },
+    { value:'final_vuelta',     label:'Final — vuelta', mult:3.2 },
   ],
   amistoso: [
     { value:'amistoso', label:'Amistoso', mult:0.4 },
   ],
+};
+// Migración de partidos viejos guardados con los valores genéricos que existían antes (ida,
+// vuelta, semifinal, final sin fase). Se mapean al equivalente más razonable (ida/vuelta ->
+// octavos, por ser la fase de eliminación directa más temprana y común) para que no desaparezcan
+// de la lista ni queden con una opción fantasma que ya no existe en el selector.
+const LEGACY_IMPORTANCE_MIGRATION = { ida:'octavos_ida', vuelta:'octavos_vuelta', semifinal:'semifinal_unico', final:'final_unico' };
+function migrateLegacyImportance(matches){
+  (matches || []).forEach(m => {
+    if(m && m.importance && LEGACY_IMPORTANCE_MIGRATION[m.importance] && competitionKind(m.comp) === 'copa'){
+      m.importance = LEGACY_IMPORTANCE_MIGRATION[m.importance];
+    }
+  });
+}
+// Fase (sin el sufijo _ida/_vuelta/_unico) y pierna de una importancia de copa, para poder
+// encontrar el partido "hermano" de una serie ida/vuelta. Devuelve null si no es una fase de
+// eliminación directa de copa en dos partidos (fase de grupos, amistoso, partido único, etc.).
+function parseTieLeg(importanceValue){
+  if(!importanceValue) return null;
+  const m = /^(octavos|cuartos|semifinal|final)_(ida|vuelta)$/.exec(importanceValue);
+  if(!m) return null;
+  return { phase: m[1], leg: m[2] };
+}
+// Igual que parseTieLeg, pero también reconoce "partido único" (octavos_unico, etc.), que
+// también define la fase al toque, solo que sin partido de ida. Se usa para decidir si hay que
+// aplicar el bonus/castigo de avanzar o quedar eliminado de TIE_DECIDED_BONUS.
+function parseCopaPhaseLeg(importanceValue){
+  if(!importanceValue) return null;
+  const m = /^(octavos|cuartos|semifinal|final)_(ida|vuelta|unico)$/.exec(importanceValue);
+  if(!m) return null;
+  return { phase: m[1], leg: m[2] };
+}
+// Partido "hermano" de una serie ida/vuelta: mismo rival, misma competencia, misma fase, la
+// otra pierna. No depende del orden de creación ni de los ids, así que funciona aunque el
+// usuario haya cargado los partidos en cualquier orden.
+function findTieSibling(m){
+  const tie = parseTieLeg(m.importance);
+  if(!tie) return null;
+  const otherLeg = tie.leg === 'ida' ? 'vuelta' : 'ida';
+  const wanted = `${tie.phase}_${otherLeg}`;
+  return state.matches.find(x => x.id !== m.id && x.comp === m.comp && x.rival === m.rival && x.importance === wanted) || null;
+}
+// Bonus/castigo EXTRA (además del efecto normal del partido en sí) por avanzar o quedar
+// eliminado en una serie/partido de copa, según la fase. Pedido del usuario: "a medida que
+// avanzan las series... todo repercuta a más. Si gano mejor las barras y si pierdo peor" y "si
+// gano la Champions/Libertadores/Sudamericana... debe sumar mucho; si no cumplo el objetivo que
+// baje mucho más". Escala con la fase: eliminarte en octavos duele bastante menos que caer en una
+// final. A propósito esto NO toca el Palmarés/los títulos -- eso sigue siendo responsabilidad
+// exclusiva del cierre de temporada (closeSeasonBtn/markObjectiveNow), para no abrir una segunda
+// vía que pueda generar títulos fantasma.
+const TIE_DECIDED_BONUS = {
+  octavos:   { avanza:{ personality:2, clubRelation:4,  fanRelation:5,  playerRelation:3, pressRelation:2, reputation:4  }, eliminado:{ personality:-2, clubRelation:-6,  fanRelation:-8,  playerRelation:-4, pressRelation:-3, reputation:-4  } },
+  cuartos:   { avanza:{ personality:3, clubRelation:6,  fanRelation:7,  playerRelation:4, pressRelation:2, reputation:6  }, eliminado:{ personality:-3, clubRelation:-8,  fanRelation:-10, playerRelation:-5, pressRelation:-3, reputation:-6  } },
+  semifinal: { avanza:{ personality:4, clubRelation:8,  fanRelation:10, playerRelation:5, pressRelation:3, reputation:9  }, eliminado:{ personality:-4, clubRelation:-11, fanRelation:-13, playerRelation:-6, pressRelation:-4, reputation:-9  } },
+  final:     { avanza:{ personality:7, clubRelation:14, fanRelation:18, playerRelation:8, pressRelation:6, reputation:16 }, eliminado:{ personality:-5, clubRelation:-14, fanRelation:-18, playerRelation:-9, pressRelation:-6, reputation:-16 } },
 };
 // Impacto en las 5 barras según la diferencia de gol del partido (antes de aplicar el
 // multiplicador de importancia del partido, que sigue actuando por encima de esta tabla).
@@ -1380,7 +1504,11 @@ const PENALTY_SHOOTOUT_EFFECT_LOSS = { personality:-1, clubRelation:-1, playerRe
 // ganar o perder por penales también").
 const PENALTY_ELIGIBLE_IMPORTANCE = new Set([
   'definitorio', 'reclasificacion', 'octavos', 'cuartos', 'semifinal_playoff', 'final_playoff',
+  // Los legacy 'vuelta'/'semifinal'/'final' quedan por si alguna partida vieja no llegó a migrar
+  // (ver LEGACY_IMPORTANCE_MIGRATION); las fases nuevas con nombre explícito son las de uso real.
   'vuelta', 'semifinal', 'final',
+  'octavos_vuelta', 'octavos_unico', 'cuartos_vuelta', 'cuartos_unico',
+  'semifinal_vuelta', 'semifinal_unico', 'final_vuelta', 'final_unico',
 ]);
 
 function goalDiffEffects(diff){
@@ -1424,6 +1552,12 @@ const state = {
   financeCrisis: { active: null, strikes: 0 },
   consecutiveLosses: 0,
   stintStats: { played:0, won:0, drawn:0, lost:0, seasons:0, titles:0 },
+  // Mejor racha invicta de este paso por el club, guardada aparte del historial de partidos (ver
+  // addTimelineEntry): como "la línea de tiempo del club" ahora se recorta a los últimos 30
+  // partidos para no acumular tanta data (pedido del usuario), el máximo invicto NO puede salir
+  // solo de ahí -- si no, una racha vieja que ya salió del recorte se "olvidaría". Se actualiza
+  // en el momento, cada vez que se juega un partido, y persiste aunque el recorte avance.
+  maxUnbeatenStreak: 0,
   pendingFutureEvents: [],
   _suppressExtremeChecks: false,
   reputation: 50,
@@ -1596,9 +1730,9 @@ function renderGameDate(){
   const lastPlayed = state.timeline && state.timeline.length ? state.timeline[0] : null;
   const nextPending = state.matches.find(m=>m.status==='pendiente');
   if(lastPlayed){
-    el.textContent = `Temporada ${state.profile.year || ''} · Última fecha jugada: ${lastPlayed.date || '—'}${nextPending ? ' · Próxima: '+(nextPending.date||'—') : ''}`;
+    el.textContent = `Temporada ${state.profile.year || ''} · Última fecha jugada: ${formatMatchDate(lastPlayed.date) || '—'}${nextPending ? ' · Próxima: '+(formatMatchDate(nextPending.date)||'—') : ''}`;
   } else if(nextPending){
-    el.textContent = `Temporada ${state.profile.year || ''} · Pretemporada · Primer partido: ${nextPending.date || '—'}`;
+    el.textContent = `Temporada ${state.profile.year || ''} · Pretemporada · Primer partido: ${formatMatchDate(nextPending.date) || '—'}`;
   } else {
     el.textContent = `Temporada ${state.profile.year || 'sin definir'} · Pretemporada`;
   }
@@ -1930,7 +2064,10 @@ function renderProfile(){
   document.getElementById('wonValue').textContent = state.stintStats.won;
   document.getElementById('drawnValue').textContent = state.stintStats.drawn;
   document.getElementById('lostValue').textContent = state.stintStats.lost;
-  document.getElementById('unbeatenValue').textContent = computeMaxUnbeatenStreak();
+  // Combina el cálculo sobre la línea de tiempo visible (que ahora se recorta a los últimos 30
+  // partidos) con el mejor histórico guardado aparte (state.maxUnbeatenStreak), para que una
+  // racha vieja que ya salió del recorte no se "pierda" del máximo mostrado.
+  document.getElementById('unbeatenValue').textContent = Math.max(computeMaxUnbeatenStreak(), state.maxUnbeatenStreak || 0);
   document.getElementById('eventsValue').textContent = state.eventHistory.length;
 
   document.getElementById('personalityValue').textContent = state.stats.personality;
@@ -2026,7 +2163,7 @@ function renderNextMatchBox(){
     <div class="match-row" onclick="switchTab('calendario'); openMatch(${nextMatch.id});">
       <div class="left">
         <div class="rival">vs ${nextMatch.rival}</div>
-        <div class="when">${nextMatch.date || 'fecha sin definir'}${nextMatch.comp ? ' · '+nextMatch.comp : ''}</div>
+        <div class="when">${formatMatchDate(nextMatch.date) || 'fecha sin definir'}${nextMatch.comp ? ' · '+nextMatch.comp : ''}</div>
       </div>
       <div class="status-tag pendiente">pendiente</div>
     </div>
@@ -2062,11 +2199,19 @@ function renderStandingsPerComp(){
   box.innerHTML = comps.map(c => {
     const existing = state.standings.find(s => s.comp === c);
     const val = existing ? existing.pos : '';
+    const buckets = STANDING_BUCKETS[competitionKind(c)] || LEAGUE_STANDING_BUCKETS;
+    // Si lo que había guardado es texto libre de antes de este cambio (no calza con ningún
+    // valor fijo de la lista), se deja la primera opción sin elegir en vez de inventar una
+    // posición -- mejor pedir que se vuelva a cargar una vez que quedarse con un dato adivinado.
+    const matches = buckets.some(b => b.value === val);
     return `
     <div class="field-row" style="margin-bottom:10px; align-items:flex-end;">
       <div>
         <label>${c}</label>
-        <input type="text" class="standing-comp-input" data-comp="${c}" placeholder="Ej: 4°, Campeón, Eliminado" value="${val}" autocomplete="off">
+        <select class="standing-comp-input" data-comp="${c}">
+          <option value="" ${matches ? '' : 'selected'} disabled>— Elegí una opción —</option>
+          ${buckets.map(b => `<option value="${b.value}" ${val===b.value?'selected':''}>${b.label}</option>`).join('')}
+        </select>
       </div>
       <div>
         <button class="btn ghost" type="button" onclick="saveStandingFor('${c.replace(/'/g,"\\'")}')" style="width:100%;">Guardar</button>
@@ -2075,9 +2220,9 @@ function renderStandingsPerComp(){
   }).join('');
 }
 function saveStandingFor(comp){
-  const input = document.querySelector(`.standing-comp-input[data-comp="${CSS.escape(comp)}"]`);
-  if(!input) return;
-  const pos = input.value.trim();
+  const select = document.querySelector(`.standing-comp-input[data-comp="${CSS.escape(comp)}"]`);
+  if(!select) return;
+  const pos = select.value;
   state.standings = state.standings.filter(s => s.comp !== comp);
   if(pos) state.standings.push({ comp, pos });
   renderStandings();
@@ -2085,73 +2230,33 @@ function saveStandingFor(comp){
   persist();
 }
 
-// Clasifica una posición en texto libre como buena o mala, para que la prensa reaccione acorde.
-function classifyStanding(posStr){
-  if(!posStr) return null;
-  const lower = posStr.toLowerCase();
-  if(/campe[oó]n|puntero|l[ií]der|primero\b|\b1er\b|1°|1º/.test(lower)) return 'excelente';
-  if(/descend|eliminad|[uú]ltimo|colista/.test(lower)) return 'mala';
-  const match = posStr.match(/(\d+)/);
-  if(match){
-    const n = parseInt(match[1], 10);
-    if(n <= 2) return 'excelente';
-    if(n <= 6) return 'buena';
-    if(n <= 12) return 'neutral';
-    return 'mala';
-  }
-  return null;
+// Clasifica la posición/fase cargada (ahora siempre un valor fijo del selector, ver
+// STANDING_BUCKET_INFO) como buena o mala, para que la prensa reaccione acorde. Si es texto
+// libre de una partida vieja que todavía no se volvió a guardar con el selector nuevo, no se
+// puede clasificar (devuelve null, como si no hubiera nada cargado).
+function classifyStanding(posValue){
+  const info = STANDING_BUCKET_INFO[posValue];
+  return info ? info.level : null;
 }
 
 // Estima qué tan cerca está un objetivo de cumplirse, cruzando el objetivo elegido con la
-// posición/fase cargada para esa competencia. Devuelve 'verde' / 'amarillo' / 'rojo' / null.
-const CUP_PHASE_RANK = { 'campeón':0, 'campeon':0, 'final':1, 'semifinal':2, 'cuartos':3, 'octavos':4, 'grupos':5, 'eliminado':6, 'descendido':6 };
-function objectiveProgress(objective, posStr){
-  if(!posStr || !objective || objective === 'Sin objetivo definido') return null;
-  const lower = posStr.toLowerCase();
-  let cupRank = null;
-  for(const key in CUP_PHASE_RANK){ if(lower.includes(key)){ cupRank = CUP_PHASE_RANK[key]; break; } }
-  const numMatch = posStr.match(/(\d+)/);
-  const numPos = numMatch ? parseInt(numMatch[1],10) : null;
+// posición/fase cargada para esa competencia (ahora un bucket fijo con un "rank" 0=mejor
+// posible a 7=peor posible, en vez de adivinar texto libre con expresiones regulares).
+function objectiveProgress(objective, posValue){
+  if(!posValue || !objective || objective === 'Sin objetivo definido') return null;
+  const info = STANDING_BUCKET_INFO[posValue];
+  if(!info || info.rank === null) return null;
+  const rank = info.rank;
 
-  if(objective === 'Ganar el título'){
-    if(cupRank !== null) return cupRank === 0 ? 'verde' : (cupRank <= 1 ? 'amarillo' : 'rojo');
-    if(numPos !== null) return numPos <= 1 ? 'verde' : (numPos <= 3 ? 'amarillo' : 'rojo');
-    return 'amarillo';
-  }
-  if(objective === 'Clasificar a competencia internacional'){
-    if(numPos !== null) return numPos <= 4 ? 'verde' : (numPos <= 7 ? 'amarillo' : 'rojo');
-    if(cupRank !== null) return cupRank <= 2 ? 'verde' : (cupRank <= 3 ? 'amarillo' : 'rojo');
-    return 'amarillo';
-  }
-  if(objective === 'Llegar a semifinales'){
-    if(cupRank !== null) return cupRank <= 2 ? 'verde' : (cupRank === 3 ? 'amarillo' : 'rojo');
-    return 'amarillo';
-  }
-  if(objective === 'Llegar a la final'){
-    if(cupRank !== null) return cupRank <= 1 ? 'verde' : (cupRank <= 2 ? 'amarillo' : 'rojo');
-    return 'amarillo';
-  }
-  if(objective === 'Llegar a cuartos de final'){
-    if(cupRank !== null) return cupRank <= 3 ? 'verde' : (cupRank === 4 ? 'amarillo' : 'rojo');
-    return 'amarillo';
-  }
-  if(objective === 'Llegar a octavos de final'){
-    if(cupRank !== null) return cupRank <= 4 ? 'verde' : (cupRank === 5 ? 'amarillo' : 'rojo');
-    return 'amarillo';
-  }
-  if(objective === 'Superar la fase de grupos'){
-    if(cupRank !== null) return cupRank <= 4 ? 'verde' : (cupRank === 5 ? 'amarillo' : 'rojo');
-    return 'amarillo';
-  }
-  if(objective === 'Top 10'){
-    if(numPos !== null) return numPos <= 10 ? 'verde' : (numPos <= 13 ? 'amarillo' : 'rojo');
-    return 'amarillo';
-  }
-  if(objective === 'Mantener la categoría'){
-    if(lower.includes('descend')) return 'rojo';
-    if(numPos !== null) return numPos <= 15 ? 'verde' : (numPos <= 18 ? 'amarillo' : 'rojo');
-    return 'amarillo';
-  }
+  if(objective === 'Ganar el título') return rank === 0 ? 'verde' : (rank <= 2 ? 'amarillo' : 'rojo');
+  if(objective === 'Clasificar a competencia internacional') return rank <= 2 ? 'verde' : (rank <= 4 ? 'amarillo' : 'rojo');
+  if(objective === 'Llegar a semifinales') return rank <= 2 ? 'verde' : (rank === 3 ? 'amarillo' : 'rojo');
+  if(objective === 'Llegar a la final') return rank <= 1 ? 'verde' : (rank <= 2 ? 'amarillo' : 'rojo');
+  if(objective === 'Llegar a cuartos de final') return rank <= 3 ? 'verde' : (rank === 4 ? 'amarillo' : 'rojo');
+  if(objective === 'Llegar a octavos de final') return rank <= 4 ? 'verde' : (rank === 5 ? 'amarillo' : 'rojo');
+  if(objective === 'Superar la fase de grupos') return rank <= 4 ? 'verde' : (rank === 5 ? 'amarillo' : 'rojo');
+  if(objective === 'Top 10') return rank <= 4 ? 'verde' : (rank === 5 ? 'amarillo' : 'rojo');
+  if(objective === 'Mantener la categoría') return rank <= 5 ? 'verde' : (rank === 6 ? 'amarillo' : 'rojo');
   return 'amarillo';
 }
 const PROGRESS_COLORS = { verde:'#3DDC84', amarillo:'#FFD166', rojo:'#FF5C6C' };
@@ -2175,7 +2280,7 @@ function renderObjectiveProgress(){
     <div style="margin-bottom:14px;">
       <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:4px;">
         <span style="font-weight:700;">${c}</span>
-        <span class="dateline">${objective}${standing ? ' · ' + standing.pos : ''}</span>
+        <span class="dateline">${objective}${standing ? ' · ' + standingLabel(standing.pos) : ''}</span>
       </div>
       <div class="bar-track"><div class="bar-fill" style="width:${pct}%; background:${color};"></div></div>
     </div>`;
@@ -2191,7 +2296,7 @@ function renderStandings(){
   list.innerHTML = state.standings.map(s => `
     <div class="match-row" style="cursor:default;">
       <div class="left"><div class="rival">${s.comp}</div></div>
-      <div class="status-tag">${s.pos || '—'}</div>
+      <div class="status-tag">${standingLabel(s.pos)}</div>
     </div>
   `).join('');
 }
@@ -2735,7 +2840,7 @@ function matchRowHtml(m, idxInGroup, groupLength, locked, dirMultiplier){
     <div class="match-row ${locked ? 'locked' : ''}" ${locked ? '' : `onclick="openMatchFromCalendar(${m.id})"`}>
       <div class="left">
         <div class="rival">vs ${m.rival}${showImportanceTag ? ` <span class="importance-tag">${info.label}</span>` : ''}</div>
-        <div class="when">${m.date || 'fecha sin definir'}${m.comp ? ' · '+m.comp : ''}${m.result ? ' · Resultado: '+m.result.home+'–'+m.result.away : ''}</div>
+        <div class="when">${formatMatchDate(m.date) || 'fecha sin definir'}${m.comp ? ' · '+m.comp : ''}${m.result ? ' · Resultado: '+m.result.home+'–'+m.result.away : ''}</div>
       </div>
       <div style="display:flex; align-items:center; gap:6px;" onclick="event.stopPropagation();">
         <button class="btn ghost small" type="button" title="Mover antes en su sección" onclick="moveMatch(${m.id}, ${-1*dirMultiplier})" ${idxInGroup===0?'disabled':''}>▲</button>
@@ -2953,6 +3058,7 @@ function loadMatchIntoZone(id){
   }
   document.getElementById('matchResultForm').style.display = m.event ? 'block' : 'none';
   document.getElementById('saveResult').textContent = m.result ? 'Corregir resultado' : 'Guardar resultado';
+  updateTieAggregateNote();
 
   // Pedido del usuario: en partidos definitorios/de eliminación directa, poder marcar que el
   // resultado (aunque haya quedado empatado arriba) se terminó definiendo por penales.
@@ -2985,7 +3091,7 @@ function openMatch(id){
   switchTab('calendario');
   mountZone('matchViewZoneAnchor');
   document.getElementById('matchView').classList.add('active');
-  document.getElementById('matchHeaderTitle').textContent = `vs ${m.rival} — ${m.date || ''}`;
+  document.getElementById('matchHeaderTitle').textContent = `vs ${m.rival} — ${formatMatchDate(m.date) || ''}`;
   loadMatchIntoZone(id);
 }
 
@@ -3049,6 +3155,33 @@ document.getElementById('penaltiesCheck').addEventListener('change', (e) => {
   document.getElementById('penaltiesWinnerRow').style.display = e.target.checked ? 'block' : 'none';
 });
 
+// Pedido del usuario: en la vuelta de una serie de copa, que se vea en todo momento cómo va el
+// global de la serie (sumando la ida ya jugada) a medida que se carga el resultado de la vuelta,
+// para saber si hay que ganar, empatar te alcanza, o hace falta dar vuelta todo.
+function updateTieAggregateNote(){
+  const note = document.getElementById('tieAggregateNote');
+  if(!note) return;
+  const m = state.matches.find(x=>x.id===activeMatchId);
+  const tie = m && parseTieLeg(m.importance);
+  if(!m || !tie || tie.leg !== 'vuelta'){ note.style.display = 'none'; return; }
+  const idaSibling = findTieSibling(m);
+  if(!idaSibling || !idaSibling.result){
+    note.style.display = 'block';
+    note.textContent = 'Todavía no cargaste el resultado de la ida: el global de la serie se va a calcular en cuanto esté.';
+    return;
+  }
+  const home = parseInt(document.getElementById('scoreHome').value) || 0;
+  const away = parseInt(document.getElementById('scoreAway').value) || 0;
+  const aggHome = home + idaSibling.result.home;
+  const aggAway = away + idaSibling.result.away;
+  note.style.display = 'block';
+  if(aggHome > aggAway) note.textContent = `Vas ganando el global ${aggHome}-${aggAway} (ida ${idaSibling.result.home}-${idaSibling.result.away}). Con este resultado, clasificás.`;
+  else if(aggHome < aggAway) note.textContent = `Vas perdiendo el global ${aggHome}-${aggAway} (ida ${idaSibling.result.home}-${idaSibling.result.away}). Con este resultado, quedás eliminado.`;
+  else note.textContent = `Vas empatado en el global ${aggHome}-${aggAway} (ida ${idaSibling.result.home}-${idaSibling.result.away}). Se define por penales.`;
+}
+document.getElementById('scoreHome').addEventListener('input', updateTieAggregateNote);
+document.getElementById('scoreAway').addEventListener('input', updateTieAggregateNote);
+
 document.getElementById('saveResult').addEventListener('click', () => {
   const m = state.matches.find(x=>x.id===activeMatchId);
   if(!m) return;
@@ -3077,6 +3210,14 @@ document.getElementById('saveResult').addEventListener('click', () => {
       state.stintStats.drawn = Math.max(0, state.stintStats.drawn - 1);
       state.stintStats.played = Math.max(0, state.stintStats.played - 1);
     }
+    // Si al corregir este resultado ya se había aplicado el bonus/castigo de "avanzó/quedó
+    // eliminado de la serie" (ver TIE_DECIDED_BONUS más abajo), hay que deshacerlo también antes
+    // de recalcular -- si no, corregir un resultado de vuelta podía dejar el bonus de la serie
+    // vieja pegado para siempre, aunque el resultado real haya cambiado.
+    if(oldResult.tieDecision){
+      Object.entries(oldResult.tieDecision.effects).forEach(([stat, val]) => { if(val !== 0) adjustStatRaw(stat, -val); });
+      state.reputation -= oldResult.tieDecision.reputationDelta || 0;
+    }
   }
 
   state._suppressExtremeChecks = true;
@@ -3088,10 +3229,22 @@ document.getElementById('saveResult').addEventListener('click', () => {
   // ganarse o perderse, no quedar como un simple empate sin consecuencias.
   const penaltiesEligible = m.importance && PENALTY_ELIGIBLE_IMPORTANCE.has(m.importance);
   const penaltiesChecked = penaltiesEligible && document.getElementById('penaltiesCheck').checked;
+  // En la VUELTA de una serie ida/vuelta, lo que importa para los penales es si el GLOBAL de la
+  // serie quedó empatado, no el marcador de este partido solo (desde que se dejó de usar la
+  // regla del gol de visitante, así se juega hoy en Champions/Libertadores/Sudamericana: puede
+  // perderse la vuelta 0-1 y aun así ir a penales si la ida se había ganado 1-0).
+  const tieLegForPenalties = parseTieLeg(m.importance);
+  const idaSiblingForPenalties = (tieLegForPenalties && tieLegForPenalties.leg === 'vuelta') ? findTieSibling(m) : null;
+  const idaPlayedForPenalties = idaSiblingForPenalties && idaSiblingForPenalties.result;
+  const scoreIsTiedForPenalties = idaPlayedForPenalties
+    ? (home + idaSiblingForPenalties.result.home) === (away + idaSiblingForPenalties.result.away)
+    : (home === away);
   let penaltyWinner = null;
   if(penaltiesChecked){
-    if(home !== away){
-      alert('Marcaste "definido por penales", pero el resultado de arriba no quedó empatado. Los penales solo se aplican cuando el marcador quedó igualado, así que se guarda el resultado tal cual está, sin penales.');
+    if(!scoreIsTiedForPenalties){
+      alert(idaPlayedForPenalties
+        ? 'Marcaste "definido por penales", pero el GLOBAL de la serie (sumando la ida) no quedó empatado. Los penales solo se aplican cuando el global queda igualado, así que se guarda el resultado tal cual está, sin penales.'
+        : 'Marcaste "definido por penales", pero el resultado de arriba no quedó empatado. Los penales solo se aplican cuando el marcador quedó igualado, así que se guarda el resultado tal cual está, sin penales.');
     } else {
       penaltyWinner = document.getElementById('penaltiesWinner').value === 'away' ? 'away' : 'home';
     }
@@ -3143,6 +3296,57 @@ document.getElementById('saveResult').addEventListener('click', () => {
     state.stintStats.played += 1;
     state.stintStats.drawn += 1;
   }
+
+  // Pedido del usuario: "a medida que avanzan las series... todo repercuta a más. Si gano mejor
+  // las barras y si pierdo peor" -- además del efecto normal de ESTE partido (arriba), si este
+  // resultado define una serie de copa (la vuelta) o una llave a partido único, se aplica un
+  // bonus/castigo extra por avanzar o quedar eliminado, que escala con la fase (más fuerte en
+  // semifinal/final que en octavos). A propósito NO toca el Palmarés/los títulos: eso sigue
+  // siendo solo responsabilidad del cierre de temporada, para no abrir una segunda vía de
+  // títulos fantasma.
+  const copaPhaseLeg = parseCopaPhaseLeg(m.importance);
+  let tieDecisionApplied = null;
+  if(copaPhaseLeg && (copaPhaseLeg.leg === 'vuelta' || copaPhaseLeg.leg === 'unico')){
+    let aggHome = home, aggAway = away;
+    if(copaPhaseLeg.leg === 'vuelta'){
+      const idaSibling = findTieSibling(m);
+      if(idaSibling && idaSibling.result){
+        aggHome = home + idaSibling.result.home;
+        aggAway = away + idaSibling.result.away;
+      }
+    }
+    let seriesResult = null;
+    if(aggHome > aggAway) seriesResult = 'avanza';
+    else if(aggHome < aggAway) seriesResult = 'eliminado';
+    else if(penaltyWinner === 'home') seriesResult = 'avanza';
+    else if(penaltyWinner === 'away') seriesResult = 'eliminado';
+    // Si el global queda empatado y todavía no se marcó quién ganó por penales, la serie queda
+    // sin decidir por ahora (se puede corregir el resultado más tarde agregando los penales):
+    // no se aplica ningún bonus fantasma de "avanzó"/"quedó eliminado" sin que de verdad se sepa.
+    if(seriesResult){
+      const table = TIE_DECIDED_BONUS[copaPhaseLeg.phase][seriesResult];
+      const { reputation: repDelta, ...statEffects } = table;
+      Object.entries(statEffects).forEach(([stat, val]) => { if(val !== 0) adjustStatRaw(stat, val); });
+      state.reputation += repDelta;
+      tieDecisionApplied = { phase: copaPhaseLeg.phase, outcome: seriesResult, effects: statEffects, reputationDelta: repDelta };
+      const phaseLabelMap = { octavos:'octavos de final', cuartos:'cuartos de final', semifinal:'semifinal', final:'la final' };
+      const phaseLabel = phaseLabelMap[copaPhaseLeg.phase] || copaPhaseLeg.phase;
+      const club = state.profile.club || 'El equipo';
+      if(!isEdit){
+        state.eventHistory.unshift({
+          matchId: m.id, rival: m.rival, date: m.date,
+          tag:'COPA', tagClass: seriesResult === 'avanza' ? '' : 'alert',
+          title: seriesResult === 'avanza'
+            ? (copaPhaseLeg.phase === 'final' ? `¡${club} se queda con el título!` : `${club} avanza en ${phaseLabel}`)
+            : `${club} queda eliminado en ${phaseLabel}`,
+          body: seriesResult === 'avanza'
+            ? `Global ${aggHome}-${aggAway} ante ${m.rival}: ${copaPhaseLeg.phase === 'final' ? 'un título que se festeja a lo grande' : 'la clasificación repercute con fuerza'} en el vestuario, la dirigencia y la afición.`
+            : `Global ${aggHome}-${aggAway} ante ${m.rival}: la eliminación pega fuerte en el vestuario, la dirigencia y la afición.`
+        });
+      }
+    }
+  }
+  if(tieDecisionApplied) m.result.tieDecision = tieDecisionApplied;
 
   if(!isEdit){
     tickAvailability();
@@ -3235,6 +3439,18 @@ function addTimelineEntry(m){
     eventTag: m.event ? m.event.tag : null,
     eventTitle: m.event ? evText(m.event.title, m.event.playerName) : null
   });
+  // Actualiza la mejor racha invicta ANTES de recortar la línea de tiempo (ver comentario en
+  // state.maxUnbeatenStreak), calculando la racha actual recorriendo desde el final hacia atrás.
+  let currentStreak = 0;
+  for(let i = state.timeline.length - 1; i >= 0; i--){
+    if(state.timeline[i].outcome === 'derrota') break;
+    currentStreak++;
+  }
+  state.maxUnbeatenStreak = Math.max(state.maxUnbeatenStreak || 0, currentStreak);
+  // Pedido del usuario: "la línea de tiempo del club... pueden irse borrando de a poco porque
+  // sino es mucha información... que salgan los últimos 30". Se recorta ACÁ, al agregar (en vez
+  // de en el render), porque es el único lugar por el que pasa siempre un partido nuevo.
+  if(state.timeline.length > 30) state.timeline = state.timeline.slice(-30);
   renderTimeline();
 }
 
@@ -3253,7 +3469,7 @@ function renderTimeline(){
     <div class="match-row" style="cursor:default;">
       <div class="left">
         <div class="rival">vs ${t.rival} — ${t.scoreLine}</div>
-        <div class="when">${t.date || ''}${t.comp ? ' · '+t.comp : ''}${t.eventTitle ? ' · Previa: '+t.eventTitle : ''}</div>
+        <div class="when">${formatMatchDate(t.date) || ''}${t.comp ? ' · '+t.comp : ''}${t.eventTitle ? ' · Previa: '+t.eventTitle : ''}</div>
       </div>
       <div class="status-tag ${t.outcome==='victoria' ? 'jugado' : ''}" style="${t.outcome==='derrota' ? 'color:var(--alert); border-color:var(--alert);' : ''}">${t.outcome}</div>
     </div>
@@ -3779,7 +3995,7 @@ function showPressConference(playedMatch){
   const wasBigMatch = infoPlayed && infoPlayed.mult >= 1.6;
 
   document.getElementById('pressIntro').textContent = nextMatch
-    ? `Previa de ${club} vs ${nextMatch.rival} (${nextMatch.comp || 'próximo compromiso'}, ${nextMatch.date || 'fecha a confirmar'}).`
+    ? `Previa de ${club} vs ${nextMatch.rival} (${nextMatch.comp || 'próximo compromiso'}, ${formatMatchDate(nextMatch.date) || 'fecha a confirmar'}).`
     : `Balance de ${club} tras el último partido jugado.`;
 
   // Banco de preguntas elegibles según el contexto; se arma la conferencia con una selección
@@ -3847,9 +4063,9 @@ function showPressConference(playedMatch){
     const chosenBad = bad.length ? bad[Math.floor(Math.random()*bad.length)] : null;
     const chosenGood = good.length ? good[Math.floor(Math.random()*good.length)] : null;
     if(chosenBad && (!chosenGood || Math.random() < 0.6)){
-      pool.push({ text: pick(STANDING_BAD_QUESTIONS)(chosenBad.comp, chosenBad.pos), playerId:null, options: standingBadQuoteOptions() });
+      pool.push({ text: pick(STANDING_BAD_QUESTIONS)(chosenBad.comp, standingLabel(chosenBad.pos)), playerId:null, options: standingBadQuoteOptions() });
     } else if(chosenGood){
-      pool.push({ text: pick(STANDING_GOOD_QUESTIONS)(chosenGood.comp, chosenGood.pos), playerId:null, options: standingGoodQuoteOptions() });
+      pool.push({ text: pick(STANDING_GOOD_QUESTIONS)(chosenGood.comp, standingLabel(chosenGood.pos)), playerId:null, options: standingGoodQuoteOptions() });
     }
   }
 
@@ -4684,10 +4900,21 @@ function checkPreMatchConference(m){
   const info = m.importance ? importanceInfo(m.comp, m.importance) : null;
   if(!info || info.mult < 1.6) return;
   m.preMatchDone = true;
+  // Pedido del usuario: en la previa de la vuelta, que la pregunta tenga en cuenta cómo quedó la
+  // ida -- no es lo mismo encarar la vuelta arriba en el marcador que necesitando dar vuelta todo.
+  const tie = parseTieLeg(m.importance);
+  const idaSibling = (tie && tie.leg === 'vuelta') ? findTieSibling(m) : null;
+  let body = `Se acerca un partido de máxima exigencia. La previa ya está caliente y todos quieren saber cómo lo encara.`;
+  if(idaSibling && idaSibling.result){
+    const { home: ih, away: ia } = idaSibling.result;
+    if(ih > ia) body = `Llega arriba en el global ${ih}-${ia} de la ida. La misión en la previa es no relajarse y cerrar la clasificación.`;
+    else if(ih < ia) body = `Llega abajo en el global ${ih}-${ia} de la ida. En la previa, todos quieren saber si hay margen para dar vuelta la serie.`;
+    else body = `Llega empatado en el global ${ih}-${ia} de la ida. En la previa, la pregunta es si este partido se define en los noventa minutos o en los penales.`;
+  }
   const syntheticEv = {
     tag:'PREVIA', tagClass:'alert', decision:'previa_grande', playerId:null,
     title: () => `Previa de ${info.label.toLowerCase()} vs ${m.rival}`,
-    body: () => `Se acerca un partido de máxima exigencia. La previa ya está caliente y todos quieren saber cómo lo encara.`,
+    body: () => body,
   };
   showMetaEventAlert(syntheticEv);
 }
@@ -5657,7 +5884,16 @@ function decideOutcome(key){
   renderDecisionBox(ev);
 }
 
+// Pedido del usuario: "el archivo de informes... pueden irse borrando de a poco porque sino es
+// mucha información... que salgan los últimos 30". Se recorta acá (en el render, que es el único
+// lugar por donde pasa siempre, sin importar desde dónde se haya agregado un informe nuevo) en
+// vez de buscar cada punto del código que agrega uno -- así no hay riesgo de que algún lugar se
+// quede sin recortar. Como los informes más nuevos van siempre al principio (unshift), recortar
+// la LONGITUD del array deja los 30 más recientes y tira los más viejos. Esto NO toca las barras
+// ni las estadísticas acumuladas (stintStats, Palmarés, historial de clubes): esas viven aparte y
+// no dependen de que el informe que las generó siga en esta lista.
 function renderEventHistory(){
+  if(state.eventHistory.length > 30) state.eventHistory.length = 30;
   const list = document.getElementById('eventHistory');
   const empty = document.getElementById('eventHistoryEmpty');
   if(state.eventHistory.length===0){
@@ -5671,7 +5907,7 @@ function renderEventHistory(){
     <div class="match-row" style="cursor:default;">
       <div class="left">
         <div class="rival">${h.title}</div>
-        <div class="when">vs ${h.rival}${h.date ? ' · '+h.date : ''} — ${h.body}</div>
+        <div class="when">vs ${h.rival}${h.date ? ' · '+formatMatchDate(h.date) : ''} — ${h.body}</div>
       </div>
       <div class="status-tag" style="color:var(--pitch); border-color:var(--pitch);">${h.tag}</div>
     </div>
@@ -5976,17 +6212,22 @@ let editingTrophyIdx = null;
 function renderTrophies(){
   const list = document.getElementById('trophyList');
   const empty = document.getElementById('trophyEmpty');
-  // Pedido del usuario: ya no hay una sección visible de historial de objetivos en la página
-  // (se sacó a propósito), así que esta función queda sin nada para actualizar. Se deja sin
-  // romper nada por si en algún momento se vuelve a agregar esa sección.
   if(!list || !empty) return;
-  if(state.trophies.length === 0){
+  // Pedido del usuario: "el historial de objetivos cumplidos tampoco me interesa que figure...
+  // solo títulos". Por dentro, state.trophies sigue guardando TODOS los objetivos cerrados
+  // (cumplidos o no, cualquier prioridad) porque las barras y el cálculo de progreso dependen de
+  // eso -- acá solo se FILTRA lo que se muestra en pantalla, para no perder la red de seguridad
+  // de poder editar/eliminar un título mal registrado por algún bug. idx sigue apuntando al
+  // índice real dentro de state.trophies (no al de esta lista filtrada), así editTrophy/
+  // deleteTrophy siguen tocando el registro correcto.
+  const titleEntries = state.trophies.map((t, idx) => ({ t, idx })).filter(({t}) => !!t.trophy);
+  if(titleEntries.length === 0){
     list.innerHTML = '';
     empty.style.display = 'block';
     return;
   }
   empty.style.display = 'none';
-  list.innerHTML = state.trophies.map((t,idx) => {
+  list.innerHTML = titleEntries.map(({t, idx}) => {
     if(editingTrophyIdx === idx){
       return `
       <div class="match-row" style="cursor:default; display:block;">
@@ -6154,6 +6395,9 @@ document.getElementById('changeClubBtn').addEventListener('click', () => {
   // para que arranque en blanco con cada nuevo ciclo. El archivo de informes SÍ se conserva:
   // ya tiene la entrada de "Salida de <club viejo>" que sirve de marca de transición.
   state.timeline = [];
+  // El máximo invicto es "de este paso por el club" (igual que stintStats), así que se reinicia
+  // junto con la línea de tiempo al cambiar de club.
+  state.maxUnbeatenStreak = 0;
   state.playerMood = {};
   state.playerAvailability = {};
   // Pedido del usuario: "revisa bien si hacemos cambio de club que no se buguee nada y que
@@ -6515,6 +6759,8 @@ document.getElementById('importSaveInput').addEventListener('change', (e) => {
     if(!state.stintStats) state.stintStats = { played:0, won:0, drawn:0, lost:0, seasons:0, titles:0 };
     if(!state.pendingFutureEvents) state.pendingFutureEvents = [];
     repairDuplicateIds();
+    migrateLegacyImportance(state.matches);
+    if(state.maxUnbeatenStreak === undefined) state.maxUnbeatenStreak = computeMaxUnbeatenStreak();
     document.getElementById('dtName').value = state.profile.name || '';
     document.getElementById('dtClub').value = state.profile.club || '';
     document.getElementById('dtYear').value = state.profile.year || '';
@@ -6573,6 +6819,14 @@ function startApp(user, pin, loadedData){
     // (el síntoma: la ruleta de un partido "nuevo" no giraba porque encontraba, con ese mismo
     // número, los datos de uno viejo ya resuelto).
     repairDuplicateIds();
+    // Migra partidos de copa guardados con las fases genéricas viejas (ida/vuelta/semifinal/
+    // final sin aclarar octavos, cuartos, etc.) a las nuevas fases explícitas.
+    migrateLegacyImportance(state.matches);
+    // Migración: en una cuenta vieja (de antes de que la línea de tiempo se empezara a recortar
+    // a los últimos 30 partidos) todavía no existe este campo. Se lo siembra con lo que ya se ve
+    // en la línea de tiempo ANTES de que el próximo partido la recorte, para no perder de golpe
+    // el máximo invicto que ya tenía acumulado.
+    if(state.maxUnbeatenStreak === undefined) state.maxUnbeatenStreak = computeMaxUnbeatenStreak();
     if(state.profile.league && LEAGUE_DB[state.profile.league]){
       leagueSelect.value = state.profile.league;
       updateClubOptions();
