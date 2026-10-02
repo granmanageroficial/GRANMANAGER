@@ -1232,7 +1232,7 @@
 // una esquina fija de la pantalla (#buildBadge) además de en el header de adentro del juego
 // (#headerBuildLine), para poder confirmar sin dudas si dos dispositivos están corriendo el
 // mismo archivo. Para la próxima entrega, alcanza con cambiar este único string.
-const BUILD_ID = 'RULEBATCH-19';
+const BUILD_ID = 'RULEBATCH-21';
 document.getElementById('buildBadge').textContent = BUILD_ID;
 const headerBuildLineEl = document.getElementById('headerBuildLine');
 if(headerBuildLineEl) headerBuildLineEl.textContent = `build ${BUILD_ID}`;
@@ -1288,20 +1288,93 @@ const LEAGUE_DB = {
 const EUROPEAN_LEAGUES = ['Premier League','LaLiga','Serie A','Bundesliga','Ligue 1'];
 function clubsForLeagues(names){ return names.flatMap(l => LEAGUE_DB[l].clubs); }
 
+// Pedido del usuario: "agregar rivales a Libertadores, Champions, equipos de Asia, Europa,
+// América del Norte, América del Sur... los que suelen participar". Antes, por ejemplo, un
+// partido de Copa Libertadores solo podía tener como rival a OTRO equipo de la Liga Profesional
+// Argentina -- nunca a un brasileño, chileno, uruguayo, etc., que es lo más común en la copa de
+// verdad. Estas listas son solo nombres de rivales (no ligas completas jugables con objetivos
+// propios, ver nota del usuario "después mediante otros agregamos los otros como en todas las
+// ligas" -- eso queda para más adelante si hace falta) para ampliar el pool de rivales de las
+// competencias continentales/intercontinentales según la confederación real que les toca.
+const SOUTH_AMERICA_RIVALS = [
+  // Brasil
+  'Flamengo','Palmeiras','São Paulo','Corinthians','Fluminense','Botafogo','Grêmio','Internacional','Atlético Mineiro','Cruzeiro','Santos','Vasco da Gama','Bahia','Athletico Paranaense',
+  // Chile
+  'Colo-Colo','Universidad de Chile','Universidad Católica',
+  // Uruguay
+  'Peñarol','Nacional',
+  // Colombia
+  'Atlético Nacional','Millonarios','América de Cali','Junior de Barranquilla',
+  // Ecuador
+  'LDU Quito','Barcelona SC','Independiente del Valle',
+  // Paraguay
+  'Olimpia','Cerro Porteño',
+  // Bolivia
+  'Bolívar','The Strongest',
+  // Perú
+  'Universitario de Deportes','Alianza Lima',
+  // Venezuela
+  'Deportivo Táchira',
+];
+const EUROPE_RIVALS = [
+  // Portugal
+  'Benfica','Porto','Sporting CP',
+  // Países Bajos
+  'Ajax','PSV Eindhoven','Feyenoord',
+  // Bélgica
+  'Club Brugge','Anderlecht',
+  // Escocia
+  'Celtic','Rangers',
+  // Turquía
+  'Galatasaray','Fenerbahçe','Beşiktaş',
+  // Austria / Suiza / República Checa
+  'Red Bull Salzburg','Young Boys','Slavia Praga',
+  // Ucrania
+  'Shakhtar Donetsk',
+];
+const ASIA_RIVALS = [
+  // Japón
+  'Urawa Red Diamonds','Kawasaki Frontale','Yokohama F. Marinos','Vissel Kobe',
+  // Corea del Sur
+  'Ulsan HD','Jeonbuk Hyundai Motors','Pohang Steelers',
+  // Catar
+  'Al-Sadd','Al-Duhail',
+  // Emiratos Árabes Unidos
+  'Al-Ain','Shabab Al-Ahli',
+  // China
+  'Shanghai Port','Shandong Taishan',
+  // Australia
+  'Melbourne City','Central Coast Mariners',
+  // Irán
+  'Persepolis','Esteghlal',
+  // Uzbekistán
+  'Pakhtakor',
+];
+const NORTH_AMERICA_RIVALS = [
+  // Costa Rica
+  'Saprissa','Alajuelense',
+  // Honduras
+  'Olimpia de Honduras','Motagua',
+  // Panamá
+  'Tauro',
+  // Jamaica
+  'Cavalier',
+];
+
 const COMPETITION_SCOPE = {
-  'Champions League': () => clubsForLeagues(EUROPEAN_LEAGUES),
-  'Europa League': () => clubsForLeagues(EUROPEAN_LEAGUES),
-  'Conference League': () => clubsForLeagues(EUROPEAN_LEAGUES),
-  'Copa Libertadores': () => LEAGUE_DB['Liga Profesional Argentina'].clubs,
-  'Copa Sudamericana': () => LEAGUE_DB['Liga Profesional Argentina'].clubs,
-  'Concachampions': () => clubsForLeagues(['Liga MX','MLS']),
+  'Champions League': () => clubsForLeagues(EUROPEAN_LEAGUES).concat(EUROPE_RIVALS),
+  'Europa League': () => clubsForLeagues(EUROPEAN_LEAGUES).concat(EUROPE_RIVALS),
+  'Conference League': () => clubsForLeagues(EUROPEAN_LEAGUES).concat(EUROPE_RIVALS),
+  'Copa Libertadores': () => LEAGUE_DB['Liga Profesional Argentina'].clubs.concat(SOUTH_AMERICA_RIVALS),
+  'Copa Sudamericana': () => LEAGUE_DB['Liga Profesional Argentina'].clubs.concat(SOUTH_AMERICA_RIVALS),
+  'Concachampions': () => clubsForLeagues(['Liga MX','MLS']).concat(NORTH_AMERICA_RIVALS),
   'Leagues Cup': () => clubsForLeagues(['Liga MX','MLS']),
   'US Open Cup': () => LEAGUE_DB['MLS'].clubs,
   'Amistoso Internacional': () => LEAGUE_DB['Selecciones Nacionales'].clubs,
   'Eliminatorias': () => LEAGUE_DB['Selecciones Nacionales'].clubs,
   'Copa del Mundo': () => LEAGUE_DB['Selecciones Nacionales'].clubs,
   'Copa Continental': () => LEAGUE_DB['Selecciones Nacionales'].clubs,
-  'Champions League Asiática': () => LEAGUE_DB['Liga Profesional Saudí'].clubs,
+  'Champions League Asiática': () => LEAGUE_DB['Liga Profesional Saudí'].clubs.concat(ASIA_RIVALS),
 };
 
 function rivalPoolFor(competition){
@@ -5364,9 +5437,14 @@ const DECISION_CONFIGS = {
     { key:'autorizar', label:'Autorizarle la ausencia', effects:{playerRelation:+3}, mood:+8, grantsAbsence:true, note:`Le diste el permiso a ${ev.playerName}, no va a estar para el próximo partido.` },
     { key:'negar', label:'No autorizarlo, necesito que esté', effects:{playerRelation:-2}, mood:-10, note:`Le negaste el permiso a ${ev.playerName}. Sigue disponible, pero se lo tomó mal.` },
   ],
+  // Pedido del usuario: "algunos eventos siguen sin consecuencias"; el texto de este evento ya
+  // decía "el jugador te pide ayuda para... no estar en el próximo partido", pero ninguna de las
+  // dos opciones lo dejaba afuera de verdad. Ahora sí: sea cual sea la decisión (mentir por él o
+  // exponerlo), el jugador no juega el próximo partido -- lo que cambia entre una opción y otra
+  // es el efecto en las barras y el riesgo de que se quiera ir, no si juega o no.
   encubrir: (ev) => [
-    { key:'mentira', label:'Cubrirlo: decir que está lesionado', effects:{playerRelation:+4, pressRelation:-6}, mood:+10, leaveRiskDelta:-5, note:`Mentiste por ${ev.playerName}: le dijiste a la prensa que está lesionado. El vínculo mejora, pero si se descubre la mentira puede haber consecuencias.` },
-    { key:'exponer', label:'Mandarlo al frente con la prensa', effects:{playerRelation:-6, pressRelation:+5, fanRelation:-3}, mood:-15, leaveRiskDelta:+20, note:`Expusiste a ${ev.playerName} ante la prensa para cubrirte vos. El jugador no te lo va a perdonar fácil, y crece su deseo de irse del club.` },
+    { key:'mentira', label:'Cubrirlo: decir que está lesionado', effects:{playerRelation:+4, pressRelation:-6}, mood:+10, leaveRiskDelta:-5, sidelineMatches:1, sidelineReason:'pidió no jugar tras la filtración', note:`Mentiste por ${ev.playerName}: le dijiste a la prensa que está lesionado, y no va a estar para el próximo partido. El vínculo mejora, pero si se descubre la mentira puede haber consecuencias.` },
+    { key:'exponer', label:'Mandarlo al frente con la prensa', effects:{playerRelation:-6, pressRelation:+5, fanRelation:-3}, mood:-15, leaveRiskDelta:+20, sidelineMatches:1, sidelineReason:'pidió no jugar tras la filtración', note:`Expusiste a ${ev.playerName} ante la prensa para cubrirte vos, y no va a estar para el próximo partido. El jugador no te lo va a perdonar fácil, y crece su deseo de irse del club.` },
   ],
   motin: () => [
     { key:'enfrentar', label:'Enfrentarlos y ponerte firme', effects:{fanRelation:-10, personality:+8, playerRelation:+3}, note:'Te plantaste firme ante la hinchada. Ganás carácter puertas adentro, pero afuera la relación empeora aún más.' },
@@ -5718,13 +5796,21 @@ const DECISION_CONFIGS = {
     { key:'desmentir_albergue', label:'Salir a desmentirlo públicamente', effects:{pressRelation:2, playerRelation:-2}, mood:-3, note:'Saliste a bajarle el tono al escándalo ante los medios.' },
     { key:'manejar_privado', label:'Dejar que se maneje en privado', effects:{pressRelation:-2, playerRelation:2}, mood:2, note:'Preferiste no meterte en la vida privada del jugador.' },
   ],
+  // Pedido del usuario: "cuando se filtra video íntimo de un jugador siendo infiel... que me
+  // diga que ese jugador por lo menos no puede jugar el próximo partido por el nivel de
+  // exposición". Antes esto no tenía ninguna consecuencia real más allá de mover un par de
+  // barras -- ahora, sea cual sea la decisión, queda afuera del próximo partido por el circo
+  // mediático (eso no depende de si lo bancás o tomás distancia, depende de la exposición en sí).
   video_infidelidad: () => [
-    { key:'respaldar_video', label:'Respaldarlo públicamente', effects:{playerRelation:3, pressRelation:-3, fanRelation:-2}, mood:5, note:'Decidiste bancarlo puertas afuera pese a la polémica.' },
-    { key:'tomar_distancia', label:'Tomar distancia del tema', effects:{playerRelation:-3, pressRelation:2}, mood:-5, note:'Preferiste no involucrarte en un escándalo tan personal.' },
+    { key:'respaldar_video', label:'Respaldarlo públicamente', effects:{playerRelation:3, pressRelation:-3, fanRelation:-2}, mood:5, sidelineMatches:1, sidelineReason:'nivel de exposición mediática', note:'Decidiste bancarlo puertas afuera pese a la polémica. Por el nivel de exposición, no va a estar para el próximo partido.' },
+    { key:'tomar_distancia', label:'Tomar distancia del tema', effects:{playerRelation:-3, pressRelation:2}, mood:-5, sidelineMatches:1, sidelineReason:'nivel de exposición mediática', note:'Preferiste no involucrarte en un escándalo tan personal. Por el nivel de exposición, no va a estar para el próximo partido.' },
   ],
+  // "Separarlos en la próxima convocatoria" prometía algo que no pasaba: ahora, si elegís
+  // separarlos, los dos quedan afuera del próximo partido (sidelineAll); si dejás que lo
+  // resuelvan solos, ninguno se pierde nada -- ahí sí tiene sentido que no haya ausencia.
   trio_vestuario: () => [
-    { key:'separarlos_trio', label:'Separarlos en la próxima convocatoria', effects:{personality:2, clubRelation:1}, moodSplit:[-2,-2], note:'Preferiste bajarle el fuego separándolos por un tiempo.' },
-    { key:'resolver_solos_trio', label:'Dejar que lo resuelvan entre ellos', effects:{personality:-1}, moodSplit:[1,1], note:'Confiaste en que son adultos y pueden resolverlo solos.' },
+    { key:'separarlos_trio', label:'Separarlos en la próxima convocatoria', effects:{personality:2, clubRelation:1}, moodSplit:[-2,-2], sidelineMatches:1, sidelineAll:true, sidelineReason:'separados por el conflicto personal', note:'Preferiste bajarle el fuego separándolos: ninguno de los dos va a estar en la próxima convocatoria.' },
+    { key:'resolver_solos_trio', label:'Dejar que lo resuelvan entre ellos', effects:{personality:-1}, moodSplit:[1,1], note:'Confiaste en que son adultos y pueden resolverlo solos. Siguen disponibles los dos.' },
   ],
   boda_relampago: () => [
     { key:'festejar_boda', label:'Festejarlo con el equipo', effects:{playerRelation:3, personality:-1}, mood:4, note:'El plantel armó un festejo espontáneo por la noticia.' },
@@ -5968,12 +6054,94 @@ const PRIORITY_PENALTY = {
   bajo:        { clubRelation:-3,  fanRelation:-3,  playerRelation:-2 },
 };
 
+// Pedido del usuario: "que no sea lo mismo perder la final que en octavos... que mientras más
+// cerca estás del objetivo, que sea menos el impacto". Esto SE SUMA al sistema de arriba, no lo
+// reemplaza: PRIORITY_PENALTY sigue siendo el castigo de referencia (según la prioridad elegida)
+// cuando el objetivo se incumple de lleno (0% de cercanía, ej. eliminado en fase de grupos
+// cuando el objetivo era ganar la copa). Lo nuevo es que, si quedaste MÁS CERCA del objetivo que
+// eso, el castigo se reduce en proporción -- nunca al revés, y nunca afecta el caso "cumplido"
+// (que ya es, por definición, el 100% de cercanía y recibe el bonus completo de siempre).
+//
+// Para copas: cada fase tiene un puntaje fijo de qué tan lejos llegaste en términos absolutos.
+// La cercanía al objetivo es ese puntaje dividido por el puntaje que exigía el objetivo, tope
+// 100%. Ejemplo pedido por el usuario: objetivo "Ganar el título" (puntaje 100) y quedás
+// eliminado en semifinales (puntaje 80) -> 80% de cercanía (80/100). Eliminado en cuartos
+// (60) -> 60%. En octavos (40) -> 40%. En fase de grupos (0) -> 0% (el golpe de siempre, sin
+// atenuar). Y si el objetivo YA ERA llegar a semifinales y llegaste justo a semifinales, el
+// puntaje exigido y el logrado son el mismo (80/80) -> 100% de cercanía, tal cual lo pidió.
+const CUP_PHASE_SCORE = { campeon:100, final:90, semifinal:80, cuartos:60, octavos:40, fase_grupos:0 };
+const OBJECTIVE_TO_CUP_PHASE_TARGET = {
+  'Ganar el título': 'campeon',
+  'Llegar a la final': 'final',
+  'Llegar a semifinales': 'semifinal',
+  'Llegar a cuartos de final': 'cuartos',
+  'Llegar a octavos de final': 'octavos',
+  'Superar la fase de grupos': 'octavos',
+};
+// Para ligas el pedido fue más fino todavía: "según posición final", no un bucket. Cada
+// objetivo de liga tiene una posición-objetivo (target) y un piso de referencia (worst, el peor
+// caso posible para ese objetivo -- se usa una tabla de 20 equipos como referencia estándar,
+// igual de aproximada que los buckets que ya existían para la prensa). La cercanía baja de
+// forma lineal entre esas dos posiciones, así que salir 2° con el objetivo de ser campeón pesa
+// mucho menos que salir 10°, aunque ninguno de los dos haya cumplido el objetivo.
+const LEAGUE_OBJECTIVE_TARGETS = {
+  'Ganar el título': { target:1, worst:20 },
+  'Clasificar a competencia internacional': { target:6, worst:20 },
+  'Top 10': { target:10, worst:20 },
+  'Mantener la categoría': { target:17, worst:20 },
+};
+// Devuelve el % de cercanía al objetivo (0 a 100) para un resultado NO cumplido, o null cuando
+// no hay suficiente información para calcularlo (competencia amistosa, objetivo sin mapeo, o
+// todavía no se cargó un resultado estructurado) -- en ese caso el llamador debe aplicar el
+// castigo completo de siempre, exactamente como antes de este cambio.
+function computeProximityPercent(comp, objective, raw){
+  if(raw === undefined || raw === null || raw === '') return null;
+  const kind = competitionKind(comp);
+  if(kind === 'copa'){
+    const target = OBJECTIVE_TO_CUP_PHASE_TARGET[objective];
+    const targetScore = CUP_PHASE_SCORE[target];
+    const actualScore = CUP_PHASE_SCORE[raw];
+    if(!targetScore || actualScore === undefined) return null;
+    return Math.max(0, Math.min(100, (actualScore / targetScore) * 100));
+  }
+  if(kind === 'liga'){
+    const cfg = LEAGUE_OBJECTIVE_TARGETS[objective];
+    if(!cfg) return null;
+    const pos = Number(raw);
+    if(!Number.isFinite(pos) || pos <= 0) return null;
+    if(pos <= cfg.target) return 100;
+    if(pos >= cfg.worst) return 0;
+    return Math.max(0, Math.min(100, 100 - ((pos - cfg.target) / (cfg.worst - cfg.target)) * 100));
+  }
+  return null;
+}
+// Convierte el valor crudo guardado (fase de copa, posición numérica de liga, o texto libre de
+// amistosos) en el texto legible que se muestra en Palmarés/historial -- mismo patrón que
+// formatMatchDate: adentro se guarda el valor crudo (para poder calcular la cercanía), afuera se
+// muestra lindo.
+function formatObjectiveResult(comp, raw){
+  if(!raw) return raw;
+  const kind = competitionKind(comp);
+  if(kind === 'copa'){
+    const info = STANDING_BUCKET_INFO[raw];
+    return info ? info.label : raw;
+  }
+  if(kind === 'liga' && /^\d+$/.test(String(raw).trim())){
+    return `${raw}°`;
+  }
+  return raw;
+}
+
 // Aplica la consecuencia real de cumplir/no cumplir un objetivo de competencia: guarda el
 // trofeo/registro en el Palmarés y mueve las barras. `midSeason: true` es para cuando se
 // registra ANTES del cierre de temporada (objetivo cumplido/definido a mitad de camino);
 // devuelve true si lo registrado fue un título ganado (para disparar el festejo).
 function applyObjectiveOutcome(comp, objective, priority, met, result, midSeason){
   const club = state.profile.club || 'el club';
+  // `result` llega crudo (fase de copa, posición numérica de liga, o texto libre de amistosos);
+  // `display` es la versión legible que se guarda para mostrar en Palmarés/historial. La
+  // cercanía se calcula siempre sobre el valor CRUDO.
+  const display = formatObjectiveResult(comp, result);
   state.trophies.unshift({
     season: state.season.year || '—',
     competition: comp,
@@ -5985,34 +6153,54 @@ function applyObjectiveOutcome(comp, objective, priority, met, result, midSeason
     // esto se guardaba como "trophy" (mostrado como "— Campeón: ...") para CUALQUIER objetivo
     // cumplido, no solo ganar el título -- de ahí que llegar a semis apareciera como si fuese un
     // título. Ahora "trophy" solo se completa cuando el objetivo era, de verdad, ganar el título.
-    trophy: (met && objective === 'Ganar el título') ? result : '',
-    position: result,
+    trophy: (met && objective === 'Ganar el título') ? display : '',
+    position: display,
+    resultRaw: result,
     midSeason: !!midSeason
   });
 
   let wonTitle = false;
+  let appliedEffects = null;
+  let proximityPct = null;
   if(met){
     const bonus = PRIORITY_BONUS[priority];
     adjustStatRaw('clubRelation', bonus.clubRelation);
     adjustStatRaw('fanRelation', bonus.fanRelation);
     adjustStatRaw('playerRelation', bonus.playerRelation);
+    appliedEffects = { clubRelation: bonus.clubRelation, fanRelation: bonus.fanRelation, playerRelation: bonus.playerRelation };
     if(objective === 'Ganar el título'){ state.stintStats.titles += 1; wonTitle = true; }
     state.eventHistory.unshift({
       matchId:null, rival:'', date:'',
       tag:'BALANCE DE TEMPORADA', title:`${comp}: objetivo cumplido${midSeason ? ' (a mitad de temporada)' : ''}`,
-      body:`${club} cumplió el objetivo en ${comp} (${objective})${result ? ': '+result : ''}.${midSeason ? ' Se registró apenas se confirmó, sin esperar al cierre de temporada.' : ''}`
+      body:`${club} cumplió el objetivo en ${comp} (${objective})${display ? ': '+display : ''}.${midSeason ? ' Se registró apenas se confirmó, sin esperar al cierre de temporada.' : ''}`
     });
   } else {
     const penalty = PRIORITY_PENALTY[priority];
-    adjustStatRaw('clubRelation', penalty.clubRelation);
-    adjustStatRaw('fanRelation', penalty.fanRelation);
-    adjustStatRaw('playerRelation', penalty.playerRelation);
+    // Pedido del usuario: el castigo por no cumplir escala según qué tan cerca estuviste del
+    // objetivo (ver comentario junto a CUP_PHASE_SCORE/LEAGUE_OBJECTIVE_TARGETS más arriba).
+    // Sin un resultado estructurado cargado (o en competencias amistosas), proximityPct queda en
+    // null y el factor es 1: el castigo completo de siempre, sin ningún cambio de comportamiento.
+    proximityPct = computeProximityPercent(comp, objective, result);
+    const factor = proximityPct === null ? 1 : Math.max(0, 1 - (proximityPct / 100));
+    appliedEffects = {
+      clubRelation: Math.round(penalty.clubRelation * factor),
+      fanRelation: Math.round(penalty.fanRelation * factor),
+      playerRelation: Math.round(penalty.playerRelation * factor),
+    };
+    adjustStatRaw('clubRelation', appliedEffects.clubRelation);
+    adjustStatRaw('fanRelation', appliedEffects.fanRelation);
+    adjustStatRaw('playerRelation', appliedEffects.playerRelation);
+    const proximityNote = proximityPct !== null && proximityPct > 0 ? ` Quedaste a un ${Math.round(proximityPct)}% de cumplirlo, así que el golpe en las barras fue menor al de un fracaso total.` : '';
     state.eventHistory.unshift({
       matchId:null, rival:'', date:'',
       tag:'BALANCE DE TEMPORADA', title:`${comp}: objetivo no cumplido${priority==='obligatorio' ? ' (OBLIGATORIO)' : ''}`,
-      body:`${club} no cumplió el objetivo en ${comp} (${objective})${priority==='obligatorio' ? '. Era un objetivo obligatorio: la dirigencia y la afición lo toman muy mal' : '. Cae la relación con la dirigencia, la afición y el plantel'}.`
+      body:`${club} no cumplió el objetivo en ${comp} (${objective})${display ? ' ('+display+')' : ''}${priority==='obligatorio' ? '. Era un objetivo obligatorio: la dirigencia y la afición lo toman muy mal' : '. Cae la relación con la dirigencia, la afición y el plantel'}.${proximityNote}`
     });
   }
+  // Se guarda el efecto EXACTO ya aplicado (escalado por cercanía, si corresponde) para que
+  // undoResolvedObjective revierta siempre el valor justo, sin tener que recalcularlo a ciegas.
+  state.trophies[0].appliedEffects = appliedEffects;
+  state.trophies[0].proximityPct = proximityPct;
   return wonTitle;
 }
 
@@ -6034,6 +6222,30 @@ function renderCloseSeasonRows(){
         <button class="link-btn" type="button" style="color:var(--alert);" onclick="undoResolvedObjective('${c.name.replace(/'/g,"\\'")}')">Deshacer este registro</button>
       </div>`;
     }
+    // Pedido del usuario: que el castigo por no cumplir dependa de qué tan cerca estuviste --
+    // para eso hace falta un resultado ESTRUCTURADO (no texto libre, que no se puede comparar
+    // contra el objetivo). Copas piden la fase alcanzada (mismo criterio que CUP_STANDING_BUCKETS);
+    // ligas piden la posición final exacta en la tabla; amistosos (no tienen objetivo medible de
+    // esta forma) siguen con el texto libre de siempre, sin ningún cambio de comportamiento.
+    const kind = competitionKind(c.name);
+    let resultField;
+    if(kind === 'copa'){
+      const phaseOptions = CUP_STANDING_BUCKETS.filter(b => b.value !== 'no_juega' && b.value !== 'eliminado');
+      resultField = `
+          <label>¿Hasta qué fase llegaste?</label>
+          <select class="close-season-result" data-comp="${c.name}">
+            <option value="" selected disabled>— Elegí una opción —</option>
+            ${phaseOptions.map(b => `<option value="${b.value}">${b.label}</option>`).join('')}
+          </select>`;
+    } else if(kind === 'liga'){
+      resultField = `
+          <label>Posición final en la tabla</label>
+          <input class="close-season-result" data-comp="${c.name}" type="number" min="1" placeholder="Ej: 2">`;
+    } else {
+      resultField = `
+          <label>Resultado final (título, resultado, etc.)</label>
+          <input class="close-season-result" data-comp="${c.name}" type="text" placeholder="Ej: Campeón del amistoso">`;
+    }
     return `
     <div class="card" style="margin-bottom:10px; padding:14px 16px;">
       <div style="font-weight:700; margin-bottom:4px;">${c.name} <span class="dateline" style="font-weight:400;">· ${PRIORITY_LABELS[c.priority]}</span></div>
@@ -6054,11 +6266,9 @@ function renderCloseSeasonRows(){
             <option value="no">No, no se cumplió</option>
           </select>
         </div>
-        <div>
-          <label>Resultado final (título, posición, etc.)</label>
-          <input class="close-season-result" data-comp="${c.name}" type="text" placeholder="Ej: Campeón, 4°, Semifinales">
-        </div>
+        <div>${resultField}</div>
       </div>
+      ${kind !== 'amistoso' ? `<div class="dateline" style="margin-top:6px;">Si no cumpliste el objetivo, cargar esto igual ayuda: cuanto más cerca hayas quedado, menos va a pegar en tus barras.</div>` : ''}
       <div class="dateline" style="margin-top:8px;">O registralo ya mismo, sin esperar al cierre de temporada (por ejemplo, si ya quedaste eliminado o ya no hay forma de alcanzarlo):</div>
       <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;">
         <button class="btn ghost small" type="button" onclick="markObjectiveNow('${c.name.replace(/'/g,"\\'")}', true)">✅ Marcar como cumplido ahora</button>
@@ -6124,7 +6334,12 @@ function undoResolvedObjective(comp){
   const idx = state.trophies.findIndex(t => t.competition === comp && t.season === season && t.midSeason);
   if(idx !== -1){
     const entry = state.trophies[idx];
-    const table = entry.met ? PRIORITY_BONUS[entry.priority] : PRIORITY_PENALTY[entry.priority];
+    // Pedido del usuario: el castigo por objetivo no cumplido ahora puede estar escalado según
+    // cercanía (no siempre es la tabla fija de PRIORITY_PENALTY). appliedEffects guarda el
+    // efecto EXACTO que se aplicó en su momento -- deshacer usa siempre ese valor si está
+    // disponible, y solo cae a la tabla fija para registros viejos guardados antes de este
+    // cambio (que nunca tuvieron appliedEffects).
+    const table = entry.appliedEffects || (entry.met ? PRIORITY_BONUS[entry.priority] : PRIORITY_PENALTY[entry.priority]);
     if(table){
       adjustStatRaw('clubRelation', -table.clubRelation);
       adjustStatRaw('fanRelation', -table.fanRelation);
