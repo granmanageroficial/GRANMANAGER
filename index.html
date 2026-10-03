@@ -900,6 +900,35 @@
     para poder revisar, editar y ELIMINAR un título mal registrado por algún bug (fue justamente
     así como se encontraron los títulos fantasma de "Cerrar temporada", ya corregido), sin perder
     esa red de seguridad ni volver a mostrar cada objetivo cumplido/no cumplido como antes. -->
+    <!-- Pedido del usuario: poder agregar un título manualmente sin esperar al cierre de
+    temporada (por ejemplo, para corregir a mano algo que no quedó registrado solo). Reusa
+    applyObjectiveOutcome, el mismo motor que usa el cierre de temporada, así el título cuenta
+    igual para las barras y el conteo de títulos, y queda protegido por el mismo deshacer. -->
+    <button class="link-btn" type="button" onclick="toggleManualTrophyForm()" id="manualTrophyToggleBtn">🏆 Agregar título manualmente</button>
+    <div id="manualTrophyForm" class="card" style="display:none; margin-bottom:10px; padding:14px 16px;">
+      <div class="field-row">
+        <div>
+          <label>Competencia</label>
+          <input id="manualTrophyComp" type="text" list="manualTrophyCompList" placeholder="Ej: Copa Libertadores">
+          <datalist id="manualTrophyCompList"></datalist>
+        </div>
+        <div>
+          <label>Prioridad (define cuánto suma a las barras)</label>
+          <select id="manualTrophyPriority">
+            <option value="obligatorio">🔴 Obligatorio</option>
+            <option value="medio" selected>🟡 Nivel medio</option>
+            <option value="bajo">🟢 Nivel bajo</option>
+          </select>
+        </div>
+      </div>
+      <label>Detalle (opcional)</label>
+      <input id="manualTrophyDetail" type="text" placeholder="Ej: le ganamos la final 2-1">
+      <div class="dateline" style="margin-top:6px;">Se registra para la temporada actual (<span id="manualTrophySeasonLabel"></span>).</div>
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <button class="btn" type="button" onclick="saveManualTrophy()">🏆 Registrar título</button>
+        <button class="btn ghost" type="button" onclick="toggleManualTrophyForm()">Cancelar</button>
+      </div>
+    </div>
     <div class="match-list" id="trophyList"></div>
     <div id="trophyEmpty" class="empty-note">Todavía no se ganó ningún título.</div>
   </section>
@@ -1232,7 +1261,7 @@
 // una esquina fija de la pantalla (#buildBadge) además de en el header de adentro del juego
 // (#headerBuildLine), para poder confirmar sin dudas si dos dispositivos están corriendo el
 // mismo archivo. Para la próxima entrega, alcanza con cambiar este único string.
-const BUILD_ID = 'RULEBATCH-21';
+const BUILD_ID = 'RULEBATCH-23';
 document.getElementById('buildBadge').textContent = BUILD_ID;
 const headerBuildLineEl = document.getElementById('headerBuildLine');
 if(headerBuildLineEl) headerBuildLineEl.textContent = `build ${BUILD_ID}`;
@@ -3290,6 +3319,14 @@ document.getElementById('saveResult').addEventListener('click', () => {
     if(oldResult.tieDecision){
       Object.entries(oldResult.tieDecision.effects).forEach(([stat, val]) => { if(val !== 0) adjustStatRaw(stat, -val); });
       state.reputation -= oldResult.tieDecision.reputationDelta || 0;
+      // Bug real reportado por el usuario: ganar la FINAL de una copa no quedaba registrado como
+      // título (ver más abajo, donde ahora se registra sola). Si se corrige el resultado de una
+      // final que YA había quedado como "avanza" (campeón), hay que deshacer también ESE título
+      // automático antes de recalcular -- si no, corregir el marcador podía dejar un título
+      // fantasma pegado aunque el resultado real haya cambiado a una derrota.
+      if(oldResult.tieDecision.phase === 'final' && oldResult.tieDecision.outcome === 'avanza'){
+        revertResolvedObjectiveEffects(m.comp);
+      }
     }
   }
 
@@ -3374,11 +3411,14 @@ document.getElementById('saveResult').addEventListener('click', () => {
   // las barras y si pierdo peor" -- además del efecto normal de ESTE partido (arriba), si este
   // resultado define una serie de copa (la vuelta) o una llave a partido único, se aplica un
   // bonus/castigo extra por avanzar o quedar eliminado, que escala con la fase (más fuerte en
-  // semifinal/final que en octavos). A propósito NO toca el Palmarés/los títulos: eso sigue
-  // siendo solo responsabilidad del cierre de temporada, para no abrir una segunda vía de
-  // títulos fantasma.
+  // semifinal/final que en octavos). Esto NO toca el Palmarés en octavos/cuartos/semifinal (eso
+  // sigue siendo responsabilidad del cierre de temporada, para no abrir una segunda vía de
+  // títulos fantasma) -- pero ganar la FINAL es un caso aparte, ver más abajo: bug real
+  // reportado por el usuario ("jugué la final de la Libertadores, la gané, y no me puso título
+  // ni festejo ni nada"), así que esa sí se registra sola en el Palmarés.
   const copaPhaseLeg = parseCopaPhaseLeg(m.importance);
   let tieDecisionApplied = null;
+  let autoTitleWon = false;
   if(copaPhaseLeg && (copaPhaseLeg.leg === 'vuelta' || copaPhaseLeg.leg === 'unico')){
     let aggHome = home, aggAway = away;
     if(copaPhaseLeg.leg === 'vuelta'){
@@ -3417,6 +3457,19 @@ document.getElementById('saveResult').addEventListener('click', () => {
             : `Global ${aggHome}-${aggAway} ante ${m.rival}: la eliminación pega fuerte en el vestuario, la dirigencia y la afición.`
         });
       }
+      // Bug real reportado por el usuario: ganar la FINAL de una copa movía las barras (el
+      // bonus de arriba) pero no quedaba ningún título registrado en el Palmarés, ni festejo. A
+      // diferencia de octavos/cuartos/semifinal (que solo avanzan de ronda), ganar la final ES,
+      // por definición, salir campeón -- así que acá sí se usa applyObjectiveOutcome (el mismo
+      // motor del cierre de temporada) para registrar el título de verdad, sumar al conteo de
+      // títulos y disparar el festejo. Se marca "ya registrado esta temporada" para esa
+      // competencia, así si más tarde se cierra la temporada no se cuenta dos veces.
+      if(!isEdit && copaPhaseLeg.phase === 'final' && seriesResult === 'avanza'){
+        const priority = (state.profile.competitionPriority && state.profile.competitionPriority[m.comp]) || 'medio';
+        autoTitleWon = applyObjectiveOutcome(m.comp, 'Ganar el título', priority, true, 'campeon', true);
+        if(!state.profile.competitionResolvedThisSeason) state.profile.competitionResolvedThisSeason = {};
+        state.profile.competitionResolvedThisSeason[m.comp] = 'Campeón';
+      }
     }
   }
   if(tieDecisionApplied) m.result.tieDecision = tieDecisionApplied;
@@ -3431,6 +3484,9 @@ document.getElementById('saveResult').addEventListener('click', () => {
   renderEventHistory();
   renderProfile();
   renderPlayers();
+  renderTrophies();
+  renderTrophyCabinet();
+  renderCloseSeasonRows();
   if(isEdit){
     state._suppressExtremeChecks = false;
     checkExtremeStates();
@@ -3440,6 +3496,13 @@ document.getElementById('saveResult').addEventListener('click', () => {
     renderMatches();
   } else {
     showPressConference(m);
+    // El título de la final (si corresponde) se festeja ANTES de entrar a la conferencia de
+    // prensa, igual que ya hacía markObjectiveNow -- así primero se vive el festejo y después
+    // se responden las preguntas (que, en este caso, van a incluir la de "qué se siente ser
+    // campeón", ver showPressConference).
+    if(autoTitleWon && document.getElementById('eventAlertModal').style.display !== 'flex'){
+      showTitleCelebration(m.comp);
+    }
   }
 });
 
@@ -3969,6 +4032,111 @@ function winConfidenceQuoteOptions(){
   return ['PICANTE','TRANQUILO','EVASIVO'].map(tag => ({ tag, label: pick(WIN_CONFIDENCE_ANSWERS[tag])(), ...WIN_CONFIDENCE_DELTAS[tag] }));
 }
 
+// Pedido del usuario: "cuando juego una final o semi, algo así relevante, que te ponga
+// preguntas super buenas y relacionadas a eso. Sobre todo si jugás la final y la ganás: qué se
+// siente ser campeón... o qué se siente perder. En la semis también: qué se siente llegar a la
+// final?". Cuatro bancos de preguntas, uno por combinación de fase (final/semifinal) y
+// resultado (avanza/eliminado) -- se eligen con el mismo mecanismo de siempre (comp/rival como
+// parámetro), pero se garantizan SIEMPRE en la conferencia cuando corresponde (ver
+// showPressConference), no como una pregunta más del pool al azar que podía no salir nunca.
+const CHAMPION_QUESTIONS = [
+  (c)=>`¡Campeón de ${c}! ¿Qué se siente en este momento?`,
+  (c)=>`Es el título de ${c}. ¿Cómo describe esta sensación?`,
+  (c)=>`¿Qué significa para usted y para el plantel salir campeón de ${c}?`,
+  (c)=>`Después de ganar ${c}, ¿a quién le dedica este título?`,
+];
+const CHAMPION_ANSWERS = {
+  PICANTE: [
+    ()=>`"¡Esto recién empieza! Vinimos a ganar todo lo que se pueda, y lo vamos a seguir demostrando."`,
+    ()=>`"Se lo dedico a los que decían que no podíamos. Este título nos lo ganamos a pulso."`,
+  ],
+  TRANQUILO: [
+    ()=>`"Es el premio a un trabajo serio de todo el plantel y el cuerpo técnico, de principio a fin."`,
+    ()=>`"Estoy feliz, pero con los pies en la tierra: esto hay que mantenerlo con trabajo, no con un solo título."`,
+  ],
+  EVASIVO: [
+    ()=>`"Todavía no lo proceso del todo, prefiero disfrutarlo en silencio con el plantel."`,
+    ()=>`"Es una alegría enorme, pero no me gusta hablar mucho de mí en un momento que es de todo el club."`,
+  ],
+};
+const CHAMPION_DELTAS = { PICANTE:{dPersonality:+10,dClub:+4,dFan:+12,dPress:-2,dMood:0}, TRANQUILO:{dPersonality:-4,dClub:+10,dFan:+6,dPress:+8,dMood:0}, EVASIVO:{dPersonality:-2,dClub:+3,dFan:+2,dPress:0,dMood:0} };
+function championQuoteOptions(){
+  return ['PICANTE','TRANQUILO','EVASIVO'].map(tag => ({ tag, label: pick(CHAMPION_ANSWERS[tag])(), ...CHAMPION_DELTAS[tag] }));
+}
+
+const RUNNER_UP_QUESTIONS = [
+  (c)=>`Se les escapó la final de ${c}. ¿Qué se siente perder un partido así?`,
+  (c)=>`Quedaron subcampeones de ${c}. ¿Cómo digiere esta derrota?`,
+  (c)=>`¿Qué le dijo al plantel en el vestuario después de perder la final de ${c}?`,
+  (c)=>`¿Cuánto les va a costar recuperarse de esta final perdida en ${c}?`,
+];
+const RUNNER_UP_ANSWERS = {
+  PICANTE: [
+    ()=>`"Esto no se puede aceptar, merecíamos mucho más. Vamos a volver por lo que es nuestro."`,
+    ()=>`"Estoy furioso, no vinimos hasta acá para quedarnos con las manos vacías."`,
+  ],
+  TRANQUILO: [
+    ()=>`"Duele, y mucho, pero llegar a una final ya dice algo bueno de este equipo. Hay que seguir creciendo."`,
+    ()=>`"Es un golpe duro, pero no borra el camino recorrido. Vamos a levantarnos de esto."`,
+  ],
+  EVASIVO: [
+    ()=>`"Todavía está muy fresca la herida, prefiero no hablar mucho hoy."`,
+    ()=>`"Necesito unos días para digerir esto antes de sacar conclusiones."`,
+  ],
+};
+const RUNNER_UP_DELTAS = { PICANTE:{dPersonality:+5,dClub:-6,dFan:-3,dPress:-4,dMood:0}, TRANQUILO:{dPersonality:-5,dClub:+2,dFan:+4,dPress:+6,dMood:0}, EVASIVO:{dPersonality:-2,dClub:0,dFan:0,dPress:-1,dMood:0} };
+function runnerUpQuoteOptions(){
+  return ['PICANTE','TRANQUILO','EVASIVO'].map(tag => ({ tag, label: pick(RUNNER_UP_ANSWERS[tag])(), ...RUNNER_UP_DELTAS[tag] }));
+}
+
+const REACHED_FINAL_QUESTIONS = [
+  (c)=>`¡Están en la final de ${c}! ¿Qué se siente llegar a esta instancia?`,
+  (c)=>`Dejaron afuera a un rival durísimo. ¿Cómo se vive el pase a la final de ${c}?`,
+  (c)=>`A un paso del título de ${c}. ¿Se anima a decir que van por todo?`,
+];
+const REACHED_FINAL_ANSWERS = {
+  PICANTE: [
+    ()=>`"Vinimos a ganar la final, no a participar. Que se preparen, porque vamos por el título."`,
+    ()=>`"Esto es solo el principio, la final la vamos a jugar para ganarla."`,
+  ],
+  TRANQUILO: [
+    ()=>`"Estamos muy felices, pero el objetivo recién se cumple a medias. Falta un partido, el más importante."`,
+    ()=>`"Vamos a disfrutar este pase, pero sin perder la cabeza: la final se prepara con humildad."`,
+  ],
+  EVASIVO: [
+    ()=>`"Prefiero no hablar de la final todavía, hay que descansar y pensar en eso después."`,
+    ()=>`"Un partido a la vez, ya habrá tiempo de hablar de la final."`,
+  ],
+};
+const REACHED_FINAL_DELTAS = { PICANTE:{dPersonality:+8,dClub:+2,dFan:+9,dPress:-3,dMood:0}, TRANQUILO:{dPersonality:-3,dClub:+6,dFan:+4,dPress:+6,dMood:0}, EVASIVO:{dPersonality:-1,dClub:+1,dFan:+1,dPress:0,dMood:0} };
+function reachedFinalQuoteOptions(){
+  return ['PICANTE','TRANQUILO','EVASIVO'].map(tag => ({ tag, label: pick(REACHED_FINAL_ANSWERS[tag])(), ...REACHED_FINAL_DELTAS[tag] }));
+}
+
+const MISSED_FINAL_QUESTIONS = [
+  (c)=>`Se quedaron a un paso de la final de ${c}. ¿Qué se siente quedar eliminados en semifinales?`,
+  (c)=>`¿Cómo se explica la eliminación en semifinales de ${c}, tan cerca de la final?`,
+  (c)=>`¿Qué le faltó al equipo para dar el salto a la final de ${c}?`,
+];
+const MISSED_FINAL_ANSWERS = {
+  PICANTE: [
+    ()=>`"Nos faltó muy poco, y eso es lo que más bronca da. No voy a mentir: duele mucho."`,
+    ()=>`"Estábamos para jugar la final y se nos escapó. Hay que sacarse la bronca de encima."`,
+  ],
+  TRANQUILO: [
+    ()=>`"Llegar a semifinales ya es un buen torneo. Nos faltó un último paso, y hay que seguir trabajando para darlo."`,
+    ()=>`"Es una pena quedar tan cerca, pero el camino recorrido también sirve para crecer."`,
+  ],
+  EVASIVO: [
+    ()=>`"Prefiero no analizarlo en caliente, recién terminó el partido."`,
+    ()=>`"Hay que dejar pasar unos días antes de sacar conclusiones de esta eliminación."`,
+  ],
+};
+const MISSED_FINAL_DELTAS = { PICANTE:{dPersonality:+4,dClub:-4,dFan:-2,dPress:-3,dMood:0}, TRANQUILO:{dPersonality:-4,dClub:+2,dFan:+2,dPress:+4,dMood:0}, EVASIVO:{dPersonality:-1,dClub:0,dFan:0,dPress:-1,dMood:0} };
+function missedFinalQuoteOptions(){
+  return ['PICANTE','TRANQUILO','EVASIVO'].map(tag => ({ tag, label: pick(MISSED_FINAL_ANSWERS[tag])(), ...MISSED_FINAL_DELTAS[tag] }));
+}
+
 const RIVAL_PREVIEW_QUESTIONS = [
   (r,c)=>`Mirando lo que viene, ¿qué opina de ${r} de cara a este cruce en ${c}?`,
   (r)=>`¿Cómo se prepara el equipo para enfrentar a ${r}?`,
@@ -4076,6 +4244,27 @@ function showPressConference(playedMatch){
   const pool = [];
   pool.push({ text: resultQuestionText(playedMatch.rival, r, wasBigMatch), playerId:null, options: resultQuoteOptions(playedMatch.rival, wasBigMatch) });
 
+  // Pedido del usuario: "cuando juego una final o semi... que te ponga preguntas super buenas y
+  // relacionadas a eso". Si este partido decidió una serie/llave de final o semifinal (ver
+  // tieDecision en saveResult), se agrega SIEMPRE la pregunta correspondiente -- se marca
+  // _guaranteed para que, más abajo, nunca quede afuera del recorte a 4 preguntas por culpa del
+  // azar, a diferencia del resto del pool.
+  if(r.tieDecision && (r.tieDecision.phase === 'final' || r.tieDecision.phase === 'semifinal')){
+    const compName = playedMatch.comp || 'la copa';
+    const td = r.tieDecision;
+    let special = null;
+    if(td.phase === 'final' && td.outcome === 'avanza'){
+      special = { text: pick(CHAMPION_QUESTIONS)(compName), playerId:null, options: championQuoteOptions() };
+    } else if(td.phase === 'final' && td.outcome === 'eliminado'){
+      special = { text: pick(RUNNER_UP_QUESTIONS)(compName), playerId:null, options: runnerUpQuoteOptions() };
+    } else if(td.phase === 'semifinal' && td.outcome === 'avanza'){
+      special = { text: pick(REACHED_FINAL_QUESTIONS)(compName), playerId:null, options: reachedFinalQuoteOptions() };
+    } else if(td.phase === 'semifinal' && td.outcome === 'eliminado'){
+      special = { text: pick(MISSED_FINAL_QUESTIONS)(compName), playerId:null, options: missedFinalQuoteOptions() };
+    }
+    if(special) pool.push({ ...special, _guaranteed: true });
+  }
+
   if(playedMatch.event && playedMatch.event.tag !== 'SIN NOVEDAD'){
     const ev = playedMatch.event;
     const pid = ev.playerId || null;
@@ -4143,10 +4332,16 @@ function showPressConference(playedMatch){
   }
 
   // Se muestran como máximo 4 preguntas por conferencia, elegidas al azar entre las elegibles,
-  // manteniendo siempre la del resultado como primera.
+  // manteniendo siempre la del resultado como primera. La pregunta de final/semifinal
+  // (_guaranteed) se separa ANTES de mezclar y se reinserta siempre en segundo lugar, para que
+  // nunca quede afuera del recorte a 4 por el sorteo del resto -- a diferencia de todas las
+  // demás, que sí compiten al azar por los lugares que quedan.
   const first = pool.shift();
+  const guaranteedIdx = pool.findIndex(q => q._guaranteed);
+  const guaranteed = guaranteedIdx !== -1 ? pool.splice(guaranteedIdx, 1)[0] : null;
   const shuffled = pool.sort(()=>Math.random()-0.5);
-  const questions = [first, ...shuffled].slice(0, 4).filter(Boolean);
+  const rest = guaranteed ? [guaranteed, ...shuffled] : shuffled;
+  const questions = [first, ...rest].slice(0, 4).filter(Boolean);
 
   state.currentPress = { questions, answered: new Array(questions.length).fill(false) };
   document.getElementById('continueBtn').disabled = true;
@@ -5426,7 +5621,7 @@ const DECISION_CONFIGS = {
   sancion: (ev) => [
     { key:'ambos', label:'Sancionar a los dos por igual', effects:{clubRelation:+4, playerRelation:-6}, moodBoth:-8, sidelineMatches:1, sidelineAll:true, sidelineReason:'sancionado tras la pelea', note:'Sancionaste a los dos jugadores por igual: ninguno de los dos va a estar disponible para el próximo partido.' },
     { key:'uno', label:'Sancionar solo al que lo empezó', effects:{clubRelation:+1, playerRelation:-2}, moodSplit:[-10,+3], sidelineMatches:1, sidelineIndex:0, sidelineReason:'sancionado tras la pelea', note:'Sancionaste solo a uno de los dos: no vas a poder contar con él en el próximo partido.' },
-    { key:'nada', label:'Dejarlo pasar puertas adentro', effects:{clubRelation:-3, playerRelation:+3}, moodBoth:+2, note:'Decidiste no sancionar a nadie.' },
+    { key:'nada', label:'Dejarlo pasar puertas adentro', effects:{clubRelation:-3, playerRelation:+3}, moodBoth:+2, sidelineMatches:1, sidelineAll:true, sidelineReason:'con golpes de la pelea', note:'Decidiste no sancionar a nadie, pero los golpes de la pelea los dejan a los dos sin margen para el próximo partido.' },
   ],
   renovar: (ev) => [
     { key:'mejorar', label:'Mejorarle la oferta contractual', effects:{clubRelation:-3, playerRelation:+5}, mood:+10, note:'Convenciste al jugador con una mejora salarial.' },
@@ -5479,16 +5674,16 @@ const DECISION_CONFIGS = {
 
   // ---- Base de 40 eventos adicionales (bev01-bev40), con decisiones propias por evento ----
   bev01: (ev) => [
-    { key:'privado', label:'Hablarlo puertas adentro', effects:{personality:-1, clubRelation:2, playerRelation:2}, mood:3, note:'Bajaste el conflicto sin hacer ruido. El grupo lo valora.' },
-    { key:'publico', label:'Ponerle un límite en público', effects:{personality:2, clubRelation:-1, fanRelation:-1, pressRelation:2}, mood:-4, note:'Marcaste autoridad frente a todos, aunque el vínculo con él se resiente un poco.' },
+    { key:'privado', label:'Hablarlo puertas adentro', effects:{personality:-1, clubRelation:2, playerRelation:2}, mood:3, sidelineMatches:1, sidelineReason:'afectado por el conflicto interno', note:'Bajaste el conflicto sin hacer ruido, pero no va a estar disponible para el próximo partido.' },
+    { key:'publico', label:'Ponerle un límite en público', effects:{personality:2, clubRelation:-1, fanRelation:-1, pressRelation:2}, mood:-4, sidelineMatches:1, sidelineReason:'afectado por el conflicto interno', note:'Marcaste autoridad frente a todos: no va a estar disponible para el próximo partido.' },
   ],
   bev02: (ev) => [
-    { key:'esperar', label:'Reorganizar el viaje para esperarlo', effects:{clubRelation:-2, fanRelation:-1, pressRelation:1}, mood:4, note:`El grupo viaja más tarde, pero ${ev.playerName} no se queda afuera.` },
-    { key:'separado', label:'Que viaje por separado en cuanto lo resuelva', effects:{clubRelation:1, playerRelation:-2}, mood:-3, note:`${ev.playerName} viaja solo apenas consigue la documentación.` },
+    { key:'esperar', label:'Reorganizar el viaje para esperarlo', effects:{clubRelation:-2, fanRelation:-1, pressRelation:1}, mood:4, sidelineMatches:1, sidelineReason:'afectado por el imprevisto de viaje', note:`El grupo viaja más tarde por ${ev.playerName}, pero igual no llega a estar disponible para el próximo partido.` },
+    { key:'separado', label:'Que viaje por separado en cuanto lo resuelva', effects:{clubRelation:1, playerRelation:-2}, mood:-3, sidelineMatches:1, sidelineReason:'afectado por el imprevisto de viaje', note:`${ev.playerName} viaja solo apenas consigue la documentación, y no llega a estar disponible para el próximo partido.` },
   ],
   bev03: (ev) => [
-    { key:'humor', label:'Tomárselo con humor', effects:{playerRelation:2, personality:1}, mood:3, note:'Se rieron todos del asunto, no pasó a mayores.' },
-    { key:'marcar', label:'Marcarle que sea más profesional', effects:{playerRelation:-2, clubRelation:2}, mood:-3, note:'Le hiciste notar que estos detalles importan.' },
+    { key:'humor', label:'Tomárselo con humor', effects:{playerRelation:2, personality:1}, mood:3, sidelineMatches:1, sidelineReason:'afectado por el episodio', note:'Se rieron todos del asunto, pero no va a estar disponible para el próximo partido.' },
+    { key:'marcar', label:'Marcarle que sea más profesional', effects:{playerRelation:-2, clubRelation:2}, mood:-3, sidelineMatches:1, sidelineReason:'afectado por el episodio', note:'Le hiciste notar que estos detalles importan, y no va a estar disponible para el próximo partido.' },
   ],
   bev04: () => [
     { key:'mantener', label:'Escucharlo, pero mantener tu idea', effects:{personality:2, clubRelation:-2}, note:'Le explicaste tus razones y no cediste en lo táctico.' },
@@ -5503,52 +5698,52 @@ const DECISION_CONFIGS = {
     { key:'separar', label:'Separarlo del cuerpo técnico', effects:{personality:3, clubRelation:-2, pressRelation:-1}, note:'Marcaste que no tolerás fisuras internas, aunque genera ruido puertas afuera.' },
   ],
   bev07: (ev) => [
-    { key:'explicaciones', label:'Pedirle explicaciones en privado', effects:{playerRelation:2, clubRelation:1}, mood:2, note:'Aclaraste el tema sin escalarlo.' },
-    { key:'excluir', label:'Excluirlo del próximo entrenamiento', effects:{playerRelation:-3, personality:2}, mood:-5, note:'Le marcaste una sanción ejemplar frente al resto.' },
+    { key:'explicaciones', label:'Pedirle explicaciones en privado', effects:{playerRelation:2, clubRelation:1}, mood:2, sidelineMatches:1, sidelineReason:'afectado por el episodio', note:'Aclaraste el tema sin escalarlo, pero no va a estar disponible para el próximo partido.' },
+    { key:'excluir', label:'Excluirlo del próximo entrenamiento', effects:{playerRelation:-3, personality:2}, mood:-5, sidelineMatches:1, sidelineReason:'excluido tras la sanción', note:'Le marcaste una sanción ejemplar frente al resto: no va a estar disponible para el próximo partido.' },
   ],
   bev08: () => [
-    { key:'separarlos', label:'Separarlos y hablar con cada uno', effects:{personality:1, clubRelation:1}, moodBoth:2, note:'Bajaste la tensión hablando con los dos por separado.' },
-    { key:'sancionarlos', label:'Sancionar a ambos por igual', effects:{personality:2, playerRelation:-2}, moodBoth:-4, note:'Sancionaste a los dos sin margen para el reclamo.' },
+    { key:'separarlos', label:'Separarlos y hablar con cada uno', effects:{personality:1, clubRelation:1}, moodBoth:2, sidelineMatches:1, sidelineAll:true, sidelineReason:'separados tras el conflicto', note:'Bajaste la tensión hablando con los dos por separado: ninguno de los dos va a estar disponible para el próximo partido.' },
+    { key:'sancionarlos', label:'Sancionar a ambos por igual', effects:{personality:2, playerRelation:-2}, moodBoth:-4, sidelineMatches:1, sidelineAll:true, sidelineReason:'sancionados tras el conflicto', note:'Sancionaste a los dos sin margen para el reclamo: ninguno va a estar disponible para el próximo partido.' },
   ],
   bev09: () => [
     { key:'hablar_grupo', label:'Aprovechar el viaje para hablar con el grupo', effects:{personality:2, playerRelation:2}, note:'Usaste el momento incómodo para reforzar el mensaje grupal.' },
     { key:'distender', label:'Dejar que cada uno se distienda a su manera', effects:{playerRelation:1, clubRelation:-1}, note:'Preferiste no forzar nada en un momento ya tenso.' },
   ],
   bev10: (ev) => [
-    { key:'dejarlo', label:'Dejarlo pasar, fue algo sano para el grupo', effects:{playerRelation:3, clubRelation:-1}, mood:4, note:'Entendiste la intención y no lo tomaste a mal.' },
-    { key:'protocolo', label:'Recordarle el protocolo de concentración', effects:{playerRelation:-2, clubRelation:2}, mood:-3, note:'Le marcaste que hay reglas que cumplir aunque la intención fuera buena.' },
+    { key:'dejarlo', label:'Dejarlo pasar, fue algo sano para el grupo', effects:{playerRelation:3, clubRelation:-1}, mood:4, sidelineMatches:1, sidelineReason:'afectado por el episodio', note:'Entendiste la intención, pero no va a estar disponible para el próximo partido.' },
+    { key:'protocolo', label:'Recordarle el protocolo de concentración', effects:{playerRelation:-2, clubRelation:2}, mood:-3, sidelineMatches:1, sidelineReason:'afectado por el episodio', note:'Le marcaste que hay reglas que cumplir: no va a estar disponible para el próximo partido.' },
   ],
   bev11: () => [
-    { key:'hechos', label:'Responderle con hechos en la cancha', effects:{personality:2, playerRelation:2, fanRelation:1}, mood:3, note:'Preferiste no entrar en polémica y dejar que hable el campo de juego.' },
-    { key:'bajar', label:'Bajarle los decibeles en privado', effects:{playerRelation:-3, personality:1}, mood:-4, note:'Le pediste que las diferencias se manejen puertas adentro.' },
+    { key:'hechos', label:'Responderle con hechos en la cancha', effects:{personality:2, playerRelation:2, fanRelation:1}, mood:3, sidelineMatches:1, sidelineReason:'afectado por la polémica', note:'Preferiste no entrar en polémica, pero no va a estar disponible para el próximo partido.' },
+    { key:'bajar', label:'Bajarle los decibeles en privado', effects:{playerRelation:-3, personality:1}, mood:-4, sidelineMatches:1, sidelineReason:'afectado por la polémica', note:'Le pediste que las diferencias se manejen puertas adentro: no va a estar disponible para el próximo partido.' },
   ],
   bev12: () => [
-    { key:'bancar', label:'Bancarlo públicamente', effects:{playerRelation:3, fanRelation:-2}, mood:5, note:'Saliste a respaldarlo ante la prensa, aunque la gente no lo tomó del todo bien.' },
-    { key:'silencio', label:'No hacer declaraciones al respecto', effects:{fanRelation:1, playerRelation:-2}, mood:-3, note:'Preferiste no meterte, pero él sintió que le faltó respaldo.' },
+    { key:'bancar', label:'Bancarlo públicamente', effects:{playerRelation:3, fanRelation:-2}, mood:5, sidelineMatches:1, sidelineReason:'bajo presión mediática', note:'Saliste a respaldarlo ante la prensa, pero no va a estar disponible para el próximo partido.' },
+    { key:'silencio', label:'No hacer declaraciones al respecto', effects:{fanRelation:1, playerRelation:-2}, mood:-3, sidelineMatches:1, sidelineReason:'bajo presión mediática', note:'Preferiste no meterte, pero no va a estar disponible para el próximo partido.' },
   ],
   bev13: () => [
-    { key:'humor2', label:'Bajarlo a tierra con humor', effects:{playerRelation:1, personality:1}, mood:2, note:'Le bajaste los humos sin generar mal clima.' },
-    { key:'serio', label:'Marcarle el error con seriedad', effects:{playerRelation:-2, clubRelation:2}, mood:-3, note:'Le hiciste ver que todavía no ganaron nada.' },
+    { key:'humor2', label:'Bajarlo a tierra con humor', effects:{playerRelation:1, personality:1}, mood:2, sidelineMatches:1, sidelineReason:'afectado por el episodio', note:'Le bajaste los humos, pero no va a estar disponible para el próximo partido.' },
+    { key:'serio', label:'Marcarle el error con seriedad', effects:{playerRelation:-2, clubRelation:2}, mood:-3, sidelineMatches:1, sidelineReason:'afectado por el episodio', note:'Le hiciste ver que todavía no ganaron nada: no va a estar disponible para el próximo partido.' },
   ],
   bev14: () => [
-    { key:'reir', label:'Reírse y seguir adelante', effects:{playerRelation:2, personality:1}, mood:3, note:'El grupo se rio y siguieron con la práctica sin problema.' },
-    { key:'repetir', label:'Hacerlo repetir la charla a solas', effects:{playerRelation:-2, personality:1}, mood:-4, note:'Le marcaste que la falta de atención tiene consecuencias.' },
+    { key:'reir', label:'Reírse y seguir adelante', effects:{playerRelation:2, personality:1}, mood:3, sidelineMatches:1, sidelineReason:'afectado por el episodio', note:'El grupo se rio, pero no va a estar disponible para el próximo partido.' },
+    { key:'repetir', label:'Hacerlo repetir la charla a solas', effects:{playerRelation:-2, personality:1}, mood:-4, sidelineMatches:1, sidelineReason:'afectado por el episodio', note:'Le marcaste que la falta de atención tiene consecuencias: no va a estar disponible para el próximo partido.' },
   ],
   bev15: () => [
-    { key:'bajar_perfil', label:'Pedirle a la familia que baje el perfil', effects:{playerRelation:1, pressRelation:2}, mood:2, note:'Ayudaste a bajar la tensión mediática sin generar más conflicto.' },
-    { key:'no_intervenir', label:'No intervenir en algo familiar', effects:{pressRelation:-2, playerRelation:1}, mood:-1, note:'Preferiste no meterte en un tema que no es futbolístico.' },
+    { key:'bajar_perfil', label:'Pedirle a la familia que baje el perfil', effects:{playerRelation:1, pressRelation:2}, mood:2, sidelineMatches:1, sidelineReason:'bajo presión mediática', note:'Ayudaste a bajar la tensión, pero no va a estar disponible para el próximo partido.' },
+    { key:'no_intervenir', label:'No intervenir en algo familiar', effects:{pressRelation:-2, playerRelation:1}, mood:-1, sidelineMatches:1, sidelineReason:'bajo presión mediática', note:'Preferiste no meterte, pero no va a estar disponible para el próximo partido.' },
   ],
   bev16: () => [
-    { key:'respaldar_juvenil', label:'Respaldarlo, es parte de su carácter', effects:{playerRelation:3, pressRelation:-2}, mood:5, note:'Le mostraste confianza en un momento de exposición.' },
-    { key:'borrar', label:'Pedirle que la borre y sea más prudente', effects:{playerRelation:-2, pressRelation:2}, mood:-4, note:'Le marcaste límites sobre el manejo de su imagen pública.' },
+    { key:'respaldar_juvenil', label:'Respaldarlo, es parte de su carácter', effects:{playerRelation:3, pressRelation:-2}, mood:5, sidelineMatches:1, sidelineReason:'bajo presión mediática', note:'Le mostraste confianza, pero no va a estar disponible para el próximo partido.' },
+    { key:'borrar', label:'Pedirle que la borre y sea más prudente', effects:{playerRelation:-2, pressRelation:2}, mood:-4, sidelineMatches:1, sidelineReason:'bajo presión mediática', note:'Le marcaste límites, y no va a estar disponible para el próximo partido.' },
   ],
   bev17: () => [
     { key:'conjunto', label:'Hablar con todo el plantel en conjunto', effects:{personality:1, playerRelation:2, pressRelation:1}, note:'Preferiste una charla grupal antes de buscar culpables.' },
     { key:'investigar', label:'Investigar y sancionar al responsable', effects:{personality:2, playerRelation:-3, clubRelation:2}, note:'Diste con el responsable y aplicaste una sanción ejemplar.' },
   ],
   bev18: () => [
-    { key:'blindar', label:'Respaldarlo y blindarlo mediáticamente', effects:{playerRelation:3, pressRelation:-2}, mood:5, note:'Saliste a bancarlo públicamente frente a la exposición mediática.' },
-    { key:'aclare', label:'Pedirle que aclare la situación él mismo', effects:{playerRelation:-2, pressRelation:2}, mood:-3, note:'Le dejaste la responsabilidad de dar la cara ante la prensa.' },
+    { key:'blindar', label:'Respaldarlo y blindarlo mediáticamente', effects:{playerRelation:3, pressRelation:-2}, mood:5, sidelineMatches:1, sidelineReason:'bajo presión mediática', note:'Saliste a bancarlo públicamente, pero no va a estar disponible para el próximo partido.' },
+    { key:'aclare', label:'Pedirle que aclare la situación él mismo', effects:{playerRelation:-2, pressRelation:2}, mood:-3, sidelineMatches:1, sidelineReason:'bajo presión mediática', note:'Le dejaste la responsabilidad de dar la cara: no va a estar disponible para el próximo partido.' },
   ],
   bev19: () => [
     { key:'confidencialidad', label:'Reforzar la confidencialidad puertas adentro', effects:{personality:1, playerRelation:1, pressRelation:-2}, note:'Le pediste al plantel más cuidado con lo que se comparte.' },
@@ -5563,12 +5758,12 @@ const DECISION_CONFIGS = {
     { key:'restar', label:'Restarle importancia públicamente', effects:{personality:2, pressRelation:-2, playerRelation:2}, note:'Preferiste bajarle el precio al tema en lugar de investigar.' },
   ],
   bev22: () => [
-    { key:'mediar', label:'Mediar entre el jugador y el patrocinador', effects:{clubRelation:2, playerRelation:1}, mood:2, note:'Actuaste de puente para bajar la tensión comercial.' },
-    { key:'respaldar_incond', label:'Respaldar al jugador sin condiciones', effects:{clubRelation:-3, playerRelation:3}, mood:4, note:'Priorizaste al jugador por sobre el reclamo comercial.' },
+    { key:'mediar', label:'Mediar entre el jugador y el patrocinador', effects:{clubRelation:2, playerRelation:1}, mood:2, sidelineMatches:1, sidelineReason:'afectado por el conflicto comercial', note:'Actuaste de puente, pero no va a estar disponible para el próximo partido.' },
+    { key:'respaldar_incond', label:'Respaldar al jugador sin condiciones', effects:{clubRelation:-3, playerRelation:3}, mood:4, sidelineMatches:1, sidelineReason:'afectado por el conflicto comercial', note:'Priorizaste al jugador, pero no va a estar disponible para el próximo partido.' },
   ],
   bev24: () => [
-    { key:'desmentir_rumor', label:'Desmentirlo públicamente', effects:{playerRelation:2, pressRelation:-1}, mood:3, note:'Salieron a bajarle el tono al rumor entre vos y el jugador.' },
-    { key:'dejar_mercado', label:'Dejar que el mercado hable por sí solo', effects:{pressRelation:2, playerRelation:-2}, mood:-3, note:'No hiciste declaraciones y el rumor siguió creciendo.' },
+    { key:'desmentir_rumor', label:'Desmentirlo públicamente', effects:{playerRelation:2, pressRelation:-1}, mood:3, sidelineMatches:1, sidelineReason:'distraído por el rumor de mercado', note:'Salieron a bajarle el tono al rumor, pero no va a estar disponible para el próximo partido.' },
+    { key:'dejar_mercado', label:'Dejar que el mercado hable por sí solo', effects:{pressRelation:2, playerRelation:-2}, mood:-3, sidelineMatches:1, sidelineReason:'distraído por el rumor de mercado', note:'No hiciste declaraciones, y no va a estar disponible para el próximo partido.' },
   ],
   bev25: () => [
     { key:'seguridad', label:'Pedir mayor seguridad para el resto de la gira', effects:{clubRelation:1, fanRelation:-1}, note:'Elevaste un reclamo formal por las medidas de seguridad.' },
@@ -5579,8 +5774,8 @@ const DECISION_CONFIGS = {
     { key:'cuestionar_arbitraje', label:'Salir con dureza a cuestionar el arbitraje', effects:{personality:-1, fanRelation:3, pressRelation:-2}, note:'La hinchada valoró tu reclamo, aunque generó roce con la prensa especializada.' },
   ],
   bev27: () => [
-    { key:'humor_look', label:'Tomárselo con humor', effects:{playerRelation:2, personality:1}, mood:2, note:'El vestuario se rio del tema y siguieron entrenando normal.' },
-    { key:'perfil_bajo', label:'Pedirle un poco más de perfil bajo', effects:{playerRelation:-1, clubRelation:1}, mood:-2, note:'Le sugeriste cuidar un poco más la imagen institucional.' },
+    { key:'humor_look', label:'Tomárselo con humor', effects:{playerRelation:2, personality:1}, mood:2, sidelineMatches:1, sidelineReason:'bajo presión mediática por el look', note:'El vestuario se rio del tema, pero no va a estar disponible para el próximo partido.' },
+    { key:'perfil_bajo', label:'Pedirle un poco más de perfil bajo', effects:{playerRelation:-1, clubRelation:1}, mood:-2, sidelineMatches:1, sidelineReason:'bajo presión mediática por el look', note:'Le sugeriste cuidar la imagen, y no va a estar disponible para el próximo partido.' },
   ],
   bev28: () => [
     { key:'identificar', label:'Pedir que se identifique y sancione al responsable', effects:{clubRelation:2, fanRelation:-2}, note:'Elevaste el reclamo institucional correspondiente.' },
@@ -5591,20 +5786,20 @@ const DECISION_CONFIGS = {
     { key:'adaptar', label:'Adaptar el entrenamiento a las condiciones', effects:{playerRelation:1, personality:2}, note:'Preferiste no generar conflicto y adaptarte a lo que hay.' },
   ],
   bev30: () => [
-    { key:'respaldar_silencio', label:'Respaldar su decisión de no hablar', effects:{playerRelation:3, pressRelation:-3}, mood:4, note:'Priorizaste su bienestar por sobre la relación con la prensa.' },
-    { key:'obligaciones', label:'Pedirle que cumpla con sus obligaciones', effects:{playerRelation:-3, pressRelation:3, clubRelation:1}, mood:-5, note:'Le remarcaste que los compromisos con la prensa son parte del trabajo.' },
+    { key:'respaldar_silencio', label:'Respaldar su decisión de no hablar', effects:{playerRelation:3, pressRelation:-3}, mood:4, sidelineMatches:1, sidelineReason:'bajo presión mediática', note:'Priorizaste su bienestar, pero no va a estar disponible para el próximo partido.' },
+    { key:'obligaciones', label:'Pedirle que cumpla con sus obligaciones', effects:{playerRelation:-3, pressRelation:3, clubRelation:1}, mood:-5, sidelineMatches:1, sidelineReason:'bajo presión mediática', note:'Le remarcaste sus obligaciones, pero no va a estar disponible para el próximo partido.' },
   ],
   bev31: () => [
-    { key:'aceptar_disculpas', label:'Aceptar sus disculpas y avanzar', effects:{playerRelation:2, clubRelation:-1}, mood:3, note:'Decidiste no hacer leña del árbol caído.' },
-    { key:'sancion_economica', label:'Sancionarlo económicamente', effects:{playerRelation:-3, clubRelation:2}, mood:-5, note:'Aplicaste una sanción ejemplar para marcar la cancha.' },
+    { key:'aceptar_disculpas', label:'Aceptar sus disculpas y avanzar', effects:{playerRelation:2, clubRelation:-1}, mood:3, sidelineMatches:1, sidelineReason:'afectado por el episodio', note:'Decidiste no hacer leña del árbol caído, pero no va a estar disponible para el próximo partido.' },
+    { key:'sancion_economica', label:'Sancionarlo económicamente', effects:{playerRelation:-3, clubRelation:2}, mood:-5, sidelineMatches:1, sidelineReason:'sancionado por el episodio', note:'Aplicaste una sanción ejemplar: no va a estar disponible para el próximo partido.' },
   ],
   bev32: () => [
-    { key:'hablar_jugador', label:'Hablar con el jugador para bajar el tema', effects:{playerRelation:1, clubRelation:1}, mood:1, note:'Buscaste contener la situación internamente.' },
-    { key:'club_responde', label:'Dejar que el club responda institucionalmente', effects:{clubRelation:-2, pressRelation:2}, mood:-2, note:'Dejaste que la dirigencia maneje la respuesta pública.' },
+    { key:'hablar_jugador', label:'Hablar con el jugador para bajar el tema', effects:{playerRelation:1, clubRelation:1}, mood:1, sidelineMatches:1, sidelineReason:'bajo presión mediática', note:'Buscaste contener la situación, pero no va a estar disponible para el próximo partido.' },
+    { key:'club_responde', label:'Dejar que el club responda institucionalmente', effects:{clubRelation:-2, pressRelation:2}, mood:-2, sidelineMatches:1, sidelineReason:'bajo presión mediática', note:'Dejaste que la dirigencia responda, pero no va a estar disponible para el próximo partido.' },
   ],
   bev33: () => [
-    { key:'dialogo_tactico', label:'Abrir el diálogo y explicarle la idea', effects:{playerRelation:4, personality:1}, mood:5, note:'Charlaron a fondo y quedó conforme con la explicación.' },
-    { key:'marcar_autoridad', label:'Marcar quién toma las decisiones', effects:{playerRelation:-4, personality:3, clubRelation:2}, mood:-6, note:'Dejaste en claro que las decisiones tácticas las tomás vos.' },
+    { key:'dialogo_tactico', label:'Abrir el diálogo y explicarle la idea', effects:{playerRelation:4, personality:1}, mood:5, sidelineMatches:1, sidelineReason:'afectado por la discusión táctica', note:'Charlaron a fondo, pero no va a estar disponible para el próximo partido.' },
+    { key:'marcar_autoridad', label:'Marcar quién toma las decisiones', effects:{playerRelation:-4, personality:3, clubRelation:2}, mood:-6, sidelineMatches:1, sidelineReason:'afectado por la discusión táctica', note:'Dejaste en claro quién decide: no va a estar disponible para el próximo partido.' },
   ],
   bev34: () => [
     { key:'arreglo', label:'Pedir el arreglo inmediato a la dirigencia', effects:{clubRelation:-2, playerRelation:1}, note:'Reclamaste una solución rápida por el estado de las instalaciones.' },
@@ -5619,42 +5814,42 @@ const DECISION_CONFIGS = {
     { key:'reclamo_logistica', label:'Reclamarle formalmente al área de logística', effects:{clubRelation:-2, playerRelation:1}, note:'Hiciste un reclamo formal para que no se repita.' },
   ],
   bev37: () => [
-    { key:'evaluar_salida', label:'Escucharlo y evaluar la salida', effects:{clubRelation:2, playerRelation:2, fanRelation:-2}, mood:3, note:'Abriste la puerta a negociar su salida en el próximo mercado.' },
-    { key:'pedir_compromiso', label:'Plantarte y pedirle compromiso', effects:{clubRelation:1, playerRelation:-4, personality:2}, mood:-6, note:'Le pediste que se enfoque en el club mientras siga el vínculo.' },
+    { key:'evaluar_salida', label:'Escucharlo y evaluar la salida', effects:{clubRelation:2, playerRelation:2, fanRelation:-2}, mood:3, sidelineMatches:1, sidelineReason:'distraído por la posible salida', note:'Abriste la puerta a negociar su salida, pero no va a estar disponible para el próximo partido.' },
+    { key:'pedir_compromiso', label:'Plantarte y pedirle compromiso', effects:{clubRelation:1, playerRelation:-4, personality:2}, mood:-6, sidelineMatches:1, sidelineReason:'distraído por la posible salida', note:'Le pediste compromiso, pero no va a estar disponible para el próximo partido.' },
   ],
   bev38: () => [
-    { key:'bajar_tono', label:'Bajarle el tono con una charla', effects:{playerRelation:1, personality:1}, mood:1, note:'Resolviste el tema sin escalar la sanción.' },
-    { key:'sancionar_broma', label:'Sancionarlo por el mal clima generado', effects:{playerRelation:-3, clubRelation:2}, mood:-5, note:'Aplicaste una sanción para dejar en claro que hay límites.' },
+    { key:'bajar_tono', label:'Bajarle el tono con una charla', effects:{playerRelation:1, personality:1}, mood:1, sidelineMatches:1, sidelineReason:'afectado por el episodio', note:'Resolviste el tema sin escalar, pero no va a estar disponible para el próximo partido.' },
+    { key:'sancionar_broma', label:'Sancionarlo por el mal clima generado', effects:{playerRelation:-3, clubRelation:2}, mood:-5, sidelineMatches:1, sidelineReason:'sancionado por el episodio', note:'Aplicaste una sanción: no va a estar disponible para el próximo partido.' },
   ],
   bev39: () => [
     { key:'reclamar_dirigencia', label:'Reclamarle a la dirigencia en privado', effects:{clubRelation:-3, personality:2}, note:'Le hiciste saber tu malestar por no haber sido consultado.' },
     { key:'respaldar_decision', label:'Respaldar la decisión públicamente', effects:{clubRelation:3, playerRelation:-2}, note:'Decidiste bancar la decisión institucional puertas afuera, aunque no te haya gustado.' },
   ],
   bev40: () => [
-    { key:'sin_trascendencia', label:'Hablarlo en privado sin trascendencia', effects:{playerRelation:2, pressRelation:-1}, mood:2, note:'Manejaste el tema puertas adentro sin darle más entidad.' },
-    { key:'sancionar_fumar', label:'Sancionarlo por la falta de profesionalismo', effects:{playerRelation:-4, clubRelation:2, pressRelation:1}, mood:-6, note:'Aplicaste una sanción ejemplar por el episodio.' },
+    { key:'sin_trascendencia', label:'Hablarlo en privado sin trascendencia', effects:{playerRelation:2, pressRelation:-1}, mood:2, sidelineMatches:1, sidelineReason:'afectado por el episodio', note:'Manejaste el tema puertas adentro, pero no va a estar disponible para el próximo partido.' },
+    { key:'sancionar_fumar', label:'Sancionarlo por la falta de profesionalismo', effects:{playerRelation:-4, clubRelation:2, pressRelation:1}, mood:-6, sidelineMatches:1, sidelineReason:'sancionado por el episodio', note:'Aplicaste una sanción ejemplar: no va a estar disponible para el próximo partido.' },
   ],
 
   // ---- Pagos de las cadenas Tipo C (consecuencia futura) ----
   bevc_capitan_explota: () => [
-    { key:'franqueza', label:'Hablarlo con franqueza y pedirle paciencia', effects:{playerRelation:4, personality:1}, note:'Lograron destrabar el conflicto con una charla sincera.' },
-    { key:'marcar_mando', label:'Marcarle que las decisiones las tomás vos', effects:{playerRelation:-4, personality:3, clubRelation:2}, note:'Le dejaste en claro que el mando lo tenés vos, aunque quedó dolido.' },
+    { key:'franqueza', label:'Hablarlo con franqueza y pedirle paciencia', effects:{playerRelation:4, personality:1}, sidelineMatches:1, sidelineReason:'afectado por el conflicto con el capitán', note:'Lograron destrabar el conflicto, pero no va a estar disponible para el próximo partido.' },
+    { key:'marcar_mando', label:'Marcarle que las decisiones las tomás vos', effects:{playerRelation:-4, personality:3, clubRelation:2}, sidelineMatches:1, sidelineReason:'afectado por el conflicto con el capitán', note:'Le dejaste en claro quién manda: no va a estar disponible para el próximo partido.' },
   ],
   bevc_oferta_definicion: () => [
     { key:'aceptar_venta', label:'Aceptar la venta', effects:{clubRelation:4, fanRelation:-4}, sellsPlayer:true, note:'Diste el visto bueno y la venta se concreta.' },
-    { key:'bloquear_venta', label:'Bloquear la operación', effects:{clubRelation:-4, playerRelation:2, fanRelation:2}, note:'Le pediste a la dirigencia que frene la negociación. El jugador sigue en el plantel.' },
+    { key:'bloquear_venta', label:'Bloquear la operación', effects:{clubRelation:-4, playerRelation:2, fanRelation:2}, sidelineMatches:1, sidelineReason:'distraído por la venta frustrada', note:'Le pediste a la dirigencia que frene la negociación. El jugador sigue en el plantel, pero no va a estar disponible para el próximo partido.' },
   ],
 
   // ---- Segunda base de eventos (bevc01-bevc22), con 2, 3 o 4 opciones según el caso ----
   bevc01: () => [
-    { key:'afuera', label:'Dejarlo afuera del partido', effects:{playerRelation:3, clubRelation:4, fanRelation:2}, mood:-2, note:'Marcaste autoridad dejándolo afuera. El plantel lo entendió.' },
+    { key:'afuera', label:'Dejarlo afuera del partido', effects:{playerRelation:3, clubRelation:4, fanRelation:2}, mood:-2, sidelineMatches:1, sidelineReason:'dejado afuera por decisión del entrenador', note:'Marcaste autoridad dejándolo afuera del próximo partido. El plantel lo entendió.' },
     { key:'perdonar', label:'Perdonarlo y que juegue', effects:{playerRelation:5, clubRelation:-5, fanRelation:-3, pressRelation:-2}, mood:6, note:'Decidiste darle una nueva oportunidad, aunque puertas afuera no cayó bien.' },
     { key:'multa_juega', label:'Sancionarlo económicamente pero que juegue', effects:{clubRelation:2, playerRelation:-2, pressRelation:2}, mood:-3, note:'Encontraste un término medio: sanción, pero sigue siendo de la partida.' },
   ],
   bevc02: () => [
     { key:'aceptar_oferta', label:'Aceptar la venta', effects:{clubRelation:5, fanRelation:-6}, sellsPlayer:true, note:'La dirigencia cierra la venta con tu visto bueno.' },
-    { key:'rechazar_oferta', label:'Rechazar la oferta', effects:{clubRelation:-3, playerRelation:3, fanRelation:4}, note:'Le dijiste a la dirigencia que no lo dejás ir.' },
-    { key:'pedir_mas', label:'Pedir más dinero', effects:{clubRelation:2, playerRelation:-1}, note:'Le devolviste la pelota a la dirigencia para negociar más arriba.' },
+    { key:'rechazar_oferta', label:'Rechazar la oferta', effects:{clubRelation:-3, playerRelation:3, fanRelation:4}, sidelineMatches:1, sidelineReason:'distraído por el interés del mercado', note:'Le dijiste a la dirigencia que no lo dejás ir, pero no va a estar disponible para el próximo partido.' },
+    { key:'pedir_mas', label:'Pedir más dinero', effects:{clubRelation:2, playerRelation:-1}, sidelineMatches:1, sidelineReason:'distraído por el interés del mercado', note:'Le devolviste la pelota a la dirigencia, pero no va a estar disponible para el próximo partido.' },
   ],
   bevc03: () => [
     { key:'aceptar_presupuesto', label:'Aceptarlo públicamente', effects:{clubRelation:3, pressRelation:-1}, note:'Diste la cara y bajaste el tema sin generar ruido.' },
@@ -5662,13 +5857,13 @@ const DECISION_CONFIGS = {
     { key:'reunion_privada', label:'Pedir una reunión privada', effects:{clubRelation:1}, note:'Preferiste discutirlo puertas adentro, sin hacer olas.' },
   ],
   bevc04: () => [
-    { key:'aceptar_renovar', label:'Aceptar la renovación', effects:{clubRelation:2, playerRelation:3, fanRelation:1}, mood:4, note:'Le diste continuidad al veterano.' },
-    { key:'negar_renovar', label:'Negarte a renovarlo', effects:{clubRelation:-2, playerRelation:-3, fanRelation:-1}, mood:-5, note:'Le comunicaste que no vas a extender su contrato.' },
-    { key:'ultima_temporada', label:'Ofrecerle una última temporada', effects:{clubRelation:1, playerRelation:1}, mood:1, note:'Encontraste un acuerdo intermedio para cerrar su etapa.' },
+    { key:'aceptar_renovar', label:'Aceptar la renovación', effects:{clubRelation:2, playerRelation:3, fanRelation:1}, mood:4, sidelineMatches:1, sidelineReason:'distraído por la negociación contractual', note:'Le diste continuidad al veterano, pero no va a estar disponible para el próximo partido.' },
+    { key:'negar_renovar', label:'Negarte a renovarlo', effects:{clubRelation:-2, playerRelation:-3, fanRelation:-1}, mood:-5, sidelineMatches:1, sidelineReason:'distraído por la negociación contractual', note:'Le comunicaste que no vas a extender su contrato: no va a estar disponible para el próximo partido.' },
+    { key:'ultima_temporada', label:'Ofrecerle una última temporada', effects:{clubRelation:1, playerRelation:1}, mood:1, sidelineMatches:1, sidelineReason:'distraído por la negociación contractual', note:'Encontraste un acuerdo intermedio, pero no va a estar disponible para el próximo partido.' },
   ],
   bevc05: () => [
     { key:'ponerlo', label:'Ponerlo en el próximo partido', effects:{clubRelation:3, playerRelation:-1}, mood:2, note:'Le diste el gusto a la dirigencia.' },
-    { key:'negarse_juvenil', label:'Negarte a alinearlo', effects:{clubRelation:-3, personality:2}, note:'Mantuviste tu criterio futbolístico por sobre el pedido.' },
+    { key:'negarse_juvenil', label:'Negarte a alinearlo', effects:{clubRelation:-3, personality:2}, sidelineMatches:1, sidelineReason:'no alineado por decisión del entrenador', note:'Mantuviste tu criterio futbolístico por sobre el pedido: no lo vas a convocar para el próximo partido.' },
     { key:'banco_juvenil', label:'Llevarlo al banco, sin garantías', effects:{clubRelation:1}, mood:1, note:'Encontraste un término medio: convocado, pero sin promesas.' },
   ],
   bevc06: () => [
@@ -5682,7 +5877,7 @@ const DECISION_CONFIGS = {
   ],
   bevc08: () => [
     { key:'ponerlo_titular', label:'Ponerlo de titular', effects:{fanRelation:3, playerRelation:-1}, mood:2, note:'Le diste el gusto a la hinchada.' },
-    { key:'mantener_decision', label:'Mantener tu decisión', effects:{fanRelation:-2, personality:2}, note:'Sostuviste tu criterio pese al reclamo popular.' },
+    { key:'mantener_decision', label:'Mantener tu decisión', effects:{fanRelation:-2, personality:2}, sidelineMatches:1, sidelineReason:'relegado por decisión del entrenador', note:'Sostuviste tu criterio pese al reclamo popular: no va a estar disponible para el próximo partido.' },
     { key:'banco_igual', label:'Llevarlo al banco de todos modos', effects:{fanRelation:1}, mood:1, note:'Un gesto a mitad de camino entre la gente y tu plan.' },
   ],
   bevc09: () => [
@@ -5705,9 +5900,9 @@ const DECISION_CONFIGS = {
     { key:'atacar_periodista', label:'Negarlo y atacar al periodista', effects:{personality:-2, pressRelation:-4}, note:'Fuiste con todo contra el periodista, lo que generó más tensión mediática.' },
   ],
   bevc13: () => [
-    { key:'negar_salida', label:'Negarlo', effects:{pressRelation:-1, playerRelation:1}, mood:1, note:'Saliste a bajarle el tono al rumor.' },
-    { key:'confirmar_salida', label:'Confirmar la situación', effects:{pressRelation:2, fanRelation:-2}, mood:-1, note:'Fuiste honesto sobre la situación, aunque generó ruido.' },
-    { key:'evitar_responder', label:'Evitar responder', effects:{pressRelation:1}, note:'Esquivaste la pregunta sin comprometerte a nada.' },
+    { key:'negar_salida', label:'Negarlo', effects:{pressRelation:-1, playerRelation:1}, mood:1, sidelineMatches:1, sidelineReason:'distraído por el rumor de salida', note:'Saliste a bajarle el tono al rumor, pero no va a estar disponible para el próximo partido.' },
+    { key:'confirmar_salida', label:'Confirmar la situación', effects:{pressRelation:2, fanRelation:-2}, mood:-1, sidelineMatches:1, sidelineReason:'distraído por el rumor de salida', note:'Fuiste honesto sobre la situación: no va a estar disponible para el próximo partido.' },
+    { key:'evitar_responder', label:'Evitar responder', effects:{pressRelation:1}, sidelineMatches:1, sidelineReason:'distraído por el rumor de salida', note:'Esquivaste la pregunta, pero no va a estar disponible para el próximo partido.' },
   ],
   bevc14: () => [
     { key:'enfrentar_grupo', label:'Enfrentarlos', effects:{playerRelation:-2, personality:2}, note:'Encaraste al grupo por lo que viste en la captura.' },
@@ -5715,12 +5910,12 @@ const DECISION_CONFIGS = {
     { key:'preguntar_filtro', label:'Preguntar quién lo filtró', effects:{playerRelation:-1, clubRelation:1}, note:'Te enfocaste en encontrar al responsable de la filtración.' },
   ],
   bevc15: () => [
-    { key:'lealtad', label:'Tomarlo como una muestra de lealtad', effects:{playerRelation:3, personality:1}, mood:4, note:'Te lo tomaste con orgullo y buen humor.' },
-    { key:'discrecion', label:'Pedirle un poco más de discreción', effects:{playerRelation:-1, clubRelation:1}, mood:-1, note:'Le sugeriste bajarle el perfil al gesto.' },
+    { key:'lealtad', label:'Tomarlo como una muestra de lealtad', effects:{playerRelation:3, personality:1}, mood:4, sidelineMatches:1, sidelineReason:'afectado por la anécdota', note:'Te lo tomaste con orgullo y buen humor, pero no va a estar disponible para el próximo partido.' },
+    { key:'discrecion', label:'Pedirle un poco más de discreción', effects:{playerRelation:-1, clubRelation:1}, mood:-1, sidelineMatches:1, sidelineReason:'afectado por la anécdota', note:'Le sugeriste bajarle el perfil al gesto, y no va a estar disponible para el próximo partido.' },
   ],
   bevc16: () => [
-    { key:'mediar_micro', label:'Mediar vos mismo', effects:{personality:1, playerRelation:1}, moodBoth:2, note:'Resolviste la pelea con una decisión salomónica.' },
-    { key:'que_se_arreglen', label:'Dejar que se arreglen solos', effects:{}, moodBoth:-1, note:'Preferiste no meterte en una pavada.' },
+    { key:'mediar_micro', label:'Mediar vos mismo', effects:{personality:1, playerRelation:1}, moodBoth:2, sidelineMatches:1, sidelineAll:true, sidelineReason:'afectados por la pelea', note:'Resolviste la pelea con una decisión salomónica: ninguno de los dos va a estar disponible para el próximo partido.' },
+    { key:'que_se_arreglen', label:'Dejar que se arreglen solos', effects:{}, moodBoth:-1, sidelineMatches:1, sidelineAll:true, sidelineReason:'afectados por la pelea', note:'Preferiste no meterte, pero ninguno de los dos va a estar disponible para el próximo partido.' },
   ],
   bevc17: () => [
     { key:'libertad_musical', label:'Darles libertad total', effects:{playerRelation:3, personality:-1}, note:'Dejaste que el plantel elija su propia música.' },
@@ -5728,33 +5923,33 @@ const DECISION_CONFIGS = {
     { key:'una_por_jugador', label:'Una canción por jugador', effects:{playerRelation:1}, note:'Encontraste una solución democrática al conflicto musical.' },
   ],
   bevc18: () => [
-    { key:'seguir_corriente', label:'Permitirle cambiar de camiseta', effects:{playerRelation:2, personality:-1}, mood:3, note:'Le seguiste la corriente a la superstición.' },
-    { key:'son_excusas', label:'Decirle que son excusas', effects:{playerRelation:-2, personality:2}, mood:-2, note:'Le bajaste el precio a la superstición con firmeza.' },
+    { key:'seguir_corriente', label:'Permitirle cambiar de camiseta', effects:{playerRelation:2, personality:-1}, mood:3, sidelineMatches:1, sidelineReason:'afectado por la superstición', note:'Le seguiste la corriente, pero no va a estar disponible para el próximo partido.' },
+    { key:'son_excusas', label:'Decirle que son excusas', effects:{playerRelation:-2, personality:2}, mood:-2, sidelineMatches:1, sidelineReason:'afectado por la superstición', note:'Le bajaste el precio a la superstición: no va a estar disponible para el próximo partido.' },
   ],
   bevc19: () => [
-    { key:'autorizar_indumentaria', label:'Autorizarlo', effects:{playerRelation:2, clubRelation:-2}, mood:3, note:'Le diste el visto bueno a su pedido personal.' },
-    { key:'obligar_reglas', label:'Obligarlo a cumplir las reglas', effects:{playerRelation:-3, clubRelation:2}, mood:-4, note:'Le hiciste cumplir el reglamento del club sin excepciones.' },
-    { key:'fuera_convocatoria', label:'Dejarlo fuera de la convocatoria', effects:{playerRelation:-4, clubRelation:3, fanRelation:-1}, mood:-6, note:'Tomaste una medida drástica por el conflicto.' },
+    { key:'autorizar_indumentaria', label:'Autorizarlo', effects:{playerRelation:2, clubRelation:-2}, mood:3, sidelineMatches:1, sidelineReason:'bajo la polémica del pedido', note:'Le diste el visto bueno, pero la polémica lo deja afuera del próximo partido.' },
+    { key:'obligar_reglas', label:'Obligarlo a cumplir las reglas', effects:{playerRelation:-3, clubRelation:2}, mood:-4, sidelineMatches:1, sidelineReason:'sancionado por el conflicto', note:'Le hiciste cumplir el reglamento: no va a estar disponible para el próximo partido.' },
+    { key:'fuera_convocatoria', label:'Dejarlo fuera de la convocatoria', effects:{playerRelation:-4, clubRelation:3, fanRelation:-1}, mood:-6, sidelineMatches:1, sidelineReason:'fuera de la convocatoria por el conflicto', note:'Tomaste una medida drástica: no lo vas a convocar para el próximo partido.' },
   ],
   bevc20: () => [
-    { key:'enfrentar_filtracion', label:'Enfrentarlo directamente', effects:{playerRelation:-3, personality:2}, mood:-4, note:'Lo encaraste cara a cara por la sospecha.' },
-    { key:'sancionar_filtracion', label:'Sancionarlo', effects:{playerRelation:-4, clubRelation:2}, mood:-6, note:'Aplicaste una sanción sin darle margen a la duda.' },
-    { key:'vigilar', label:'Mantenerlo bajo vigilancia', effects:{clubRelation:1}, mood:-1, note:'Decidiste observar de cerca sin tomar medidas todavía.' },
-    { key:'ignorar_filtracion', label:'Ignorarlo', effects:{playerRelation:1, clubRelation:-1}, mood:1, note:'Preferiste no darle entidad a la sospecha.' },
+    { key:'enfrentar_filtracion', label:'Enfrentarlo directamente', effects:{playerRelation:-3, personality:2}, mood:-4, sidelineMatches:1, sidelineReason:'bajo sospecha por la filtración', note:'Lo encaraste cara a cara: no va a estar disponible para el próximo partido.' },
+    { key:'sancionar_filtracion', label:'Sancionarlo', effects:{playerRelation:-4, clubRelation:2}, mood:-6, sidelineMatches:1, sidelineReason:'sancionado por la filtración', note:'Aplicaste una sanción: no va a estar disponible para el próximo partido.' },
+    { key:'vigilar', label:'Mantenerlo bajo vigilancia', effects:{clubRelation:1}, mood:-1, sidelineMatches:1, sidelineReason:'bajo sospecha por la filtración', note:'Decidiste observar de cerca, pero no va a estar disponible para el próximo partido.' },
+    { key:'ignorar_filtracion', label:'Ignorarlo', effects:{playerRelation:1, clubRelation:-1}, mood:1, sidelineMatches:1, sidelineReason:'bajo sospecha por la filtración', note:'Preferiste no darle entidad a la sospecha, pero no va a estar disponible para el próximo partido.' },
   ],
   bevc21: () => [
     { key:'prometer_minutos', label:'Escucharlo y prometerle más minutos', effects:{playerRelation:3, clubRelation:-2}, mood:4, note:'Le diste una señal de que va a tener más oportunidades.' },
-    { key:'sancionar_no_entrena', label:'Sancionarlo', effects:{playerRelation:-3, clubRelation:2}, mood:-5, note:'Respondiste con mano dura ante su negativa a entrenar.' },
-    { key:'banco_nuevo_aviso', label:'Mandarlo al banco hasta nuevo aviso', effects:{playerRelation:-2}, mood:-3, note:'Le bajaste el estatus dentro del plantel.' },
+    { key:'sancionar_no_entrena', label:'Sancionarlo', effects:{playerRelation:-3, clubRelation:2}, mood:-5, sidelineMatches:1, sidelineReason:'sancionado por negarse a entrenar', note:'Respondiste con mano dura: no va a estar disponible para el próximo partido.' },
+    { key:'banco_nuevo_aviso', label:'Mandarlo al banco hasta nuevo aviso', effects:{playerRelation:-2}, mood:-3, sidelineMatches:1, sidelineReason:'relegado hasta nuevo aviso', note:'Le bajaste el estatus dentro del plantel: no lo vas a convocar para el próximo partido.' },
   ],
   bevc22: () => [
-    { key:'prometer_minutos_suplente', label:'Prometerle minutos', effects:{playerRelation:3, clubRelation:-1}, mood:3, note:'Le diste garantías de que va a sumar minutos pronto.' },
-    { key:'mantener_suplente', label:'Mantenerlo como suplente', effects:{playerRelation:-2, personality:1}, mood:-3, note:'Sostuviste tu decisión pese a la amenaza.' },
+    { key:'prometer_minutos_suplente', label:'Prometerle minutos', effects:{playerRelation:3, clubRelation:-1}, mood:3, sidelineMatches:1, sidelineReason:'a la espera de la promesa de minutos', note:'Le diste garantías de minutos a futuro, pero no llega a estar disponible para el próximo partido.' },
+    { key:'mantener_suplente', label:'Mantenerlo como suplente', effects:{playerRelation:-2, personality:1}, mood:-3, sidelineMatches:1, sidelineReason:'relegado tras el reclamo', note:'Sostuviste tu decisión: no va a estar disponible para el próximo partido.' },
     { key:'titular_ya', label:'Ponerlo de titular en el próximo partido', effects:{playerRelation:4, clubRelation:-2}, mood:5, note:'Le diste la titularidad que reclamaba.' },
   ],
   contenedor_jugador: () => [
     { key:'aceptar_encerrar', label:'Aceptar y encerrarlo en el contenedor', effects:{clubRelation:5, playerRelation:-5}, mood:-8, sidelineMatches:999, sidelineReason:'encerrado en un contenedor por orden del presidente', note:'Cumpliste el pedido del presidente al pie de la letra. Queda apartado del plantel por tiempo indeterminado, y el vestuario no lo va a olvidar fácil.' },
-    { key:'negarse_encerrar', label:'Negarte a hacerlo', effects:{clubRelation:-5, playerRelation:5}, mood:6, note:'Te negaste a semejante pedido. El plantel te lo agradece, pero la relación con el presidente se resiente.' },
+    { key:'negarse_encerrar', label:'Negarte a hacerlo', effects:{clubRelation:-5, playerRelation:5}, mood:6, sidelineMatches:1, sidelineReason:'golpeado por todo el episodio', note:'Te negaste a semejante pedido. El plantel te lo agradece, pero igual queda golpeado por todo el episodio y no va a estar disponible para el próximo partido.' },
   ],
 
   // ---- Decisiones agregadas para que ningún evento quede sin repercusión real ----
@@ -5763,38 +5958,38 @@ const DECISION_CONFIGS = {
     { key:'instrucciones_tribuna', label:'Mandarle instrucciones detalladas desde la tribuna', effects:{personality:2, playerRelation:-2}, note:'Micromanejaste el partido desde la tribuna, algo que no cayó del todo bien puertas adentro.' },
   ],
   roce_entrenamiento: () => [
-    { key:'mediar_roce', label:'Mediar en el momento', effects:{personality:1, playerRelation:1}, moodBoth:2, note:'Bajaste la tensión al instante, sin dejar que escale.' },
-    { key:'dejar_solos', label:'Dejar que lo resuelvan solos', effects:{playerRelation:-1}, moodBoth:-1, note:'Preferiste no meterte en una pavada, aunque quedó cierta tensión en el aire.' },
+    { key:'mediar_roce', label:'Mediar en el momento', effects:{personality:1, playerRelation:1}, moodBoth:2, sidelineMatches:1, sidelineAll:true, sidelineReason:'con molestias físicas tras el roce en la práctica', note:'Bajaste la tensión al instante, pero el encontronazo los dejó a los dos con molestias físicas: no van a estar disponibles para el próximo partido.' },
+    { key:'dejar_solos', label:'Dejar que lo resuelvan solos', effects:{playerRelation:-1}, moodBoth:-1, sidelineMatches:1, sidelineAll:true, sidelineReason:'con molestias físicas tras el roce en la práctica', note:'Preferiste no meterte, pero el golpe del roce los deja a los dos sin margen para arriesgarlos en el próximo partido.' },
   ],
   llegada_tarde: () => [
     { key:'amonestar_tarde', label:'Amonestarlo formalmente', effects:{playerRelation:-3, clubRelation:2}, mood:-4, sidelineMatches:1, sidelineReason:'amonestado por llegadas tarde', note:'Le dejaste en claro que no puede repetirse: no lo vas a poder convocar en el próximo partido.' },
-    { key:'vista_gorda', label:'Hacer la vista gorda una vez más', effects:{playerRelation:2, clubRelation:-2}, mood:3, note:'Decidiste no hacer olas por esta vez.' },
+    { key:'vista_gorda', label:'Hacer la vista gorda una vez más', effects:{playerRelation:2, clubRelation:-2}, mood:3, sidelineMatches:1, sidelineReason:'afectado por las llegadas tarde', note:'Decidiste no hacer olas por esta vez, pero no va a estar disponible para el próximo partido.' },
   ],
   fiesta: () => [
     { key:'sancionar_fiesta', label:'Sancionarlo por la salida', effects:{playerRelation:-3, clubRelation:2}, mood:-4, sidelineMatches:1, sidelineReason:'sancionado por la salida nocturna', note:'Aplicaste una sanción por la falta de profesionalismo: se pierde el próximo partido.' },
-    { key:'dejar_pasar_fiesta', label:'Dejarlo pasar', effects:{playerRelation:2, clubRelation:-1}, mood:2, note:'Preferiste no hacer un escándalo por esta vez.' },
+    { key:'dejar_pasar_fiesta', label:'Dejarlo pasar', effects:{playerRelation:2, clubRelation:-1}, mood:2, sidelineMatches:1, sidelineReason:'afectado por la salida nocturna', note:'Preferiste no hacer un escándalo, pero no va a estar disponible para el próximo partido.' },
   ],
   sobrepeso: () => [
-    { key:'plan_intensivo', label:'Exigirle un plan físico intensivo', effects:{playerRelation:-2, personality:2}, mood:-3, note:'Le marcaste la cancha con un plan de trabajo exigente.' },
-    { key:'tiempo_con_calma', label:'Darle tiempo para ponerse a punto con calma', effects:{playerRelation:2, clubRelation:-1}, mood:2, note:'Optaste por la paciencia antes que la presión.' },
+    { key:'plan_intensivo', label:'Exigirle un plan físico intensivo', effects:{playerRelation:-2, personality:2}, mood:-3, sidelineMatches:1, sidelineReason:'a puesta a punto física', note:'Le marcaste la cancha con un plan de trabajo exigente: no va a estar disponible para el próximo partido.' },
+    { key:'tiempo_con_calma', label:'Darle tiempo para ponerse a punto con calma', effects:{playerRelation:2, clubRelation:-1}, mood:2, sidelineMatches:1, sidelineReason:'a puesta a punto física', note:'Optaste por la paciencia, pero no va a estar disponible para el próximo partido.' },
   ],
   baile_viral: () => [
-    { key:'reirse_baile', label:'Reírte con él y sumarte a la joda', effects:{playerRelation:3, personality:-1}, mood:3, note:'El vestuario lo vivió con humor y vos también.' },
-    { key:'borrar_baile', label:'Pedirle que borre el video', effects:{playerRelation:-2, pressRelation:1}, mood:-2, note:'Le pediste bajar el perfil ante la exposición pública.' },
+    { key:'reirse_baile', label:'Reírte con él y sumarte a la joda', effects:{playerRelation:3, personality:-1}, mood:3, sidelineMatches:1, sidelineReason:'bajo presión mediática por el video viral', note:'El vestuario lo vivió con humor, pero no va a estar disponible para el próximo partido.' },
+    { key:'borrar_baile', label:'Pedirle que borre el video', effects:{playerRelation:-2, pressRelation:1}, mood:-2, sidelineMatches:1, sidelineReason:'bajo presión mediática por el video viral', note:'Le pediste bajar el perfil, y no va a estar disponible para el próximo partido.' },
   ],
   mascota_vestuario: () => [
-    { key:'dejar_mascota', label:'Dejarlo tener la mascota en el predio', effects:{playerRelation:2, personality:-1}, mood:3, note:'Le diste el gusto, el ambiente quedó relajado.' },
-    { key:'no_mas_mascota', label:'Pedirle que no la traiga más', effects:{playerRelation:-1, clubRelation:1}, mood:-1, note:'Le marcaste que hay reglas que cumplir.' },
+    { key:'dejar_mascota', label:'Dejarlo tener la mascota en el predio', effects:{playerRelation:2, personality:-1}, mood:3, sidelineMatches:1, sidelineReason:'afectado por el episodio de la mascota', note:'Le diste el gusto, pero no va a estar disponible para el próximo partido.' },
+    { key:'no_mas_mascota', label:'Pedirle que no la traiga más', effects:{playerRelation:-1, clubRelation:1}, mood:-1, sidelineMatches:1, sidelineReason:'afectado por el episodio de la mascota', note:'Le marcaste que hay reglas que cumplir, y no va a estar disponible para el próximo partido.' },
   ],
   bev_multa_transito: () => [
-    { key:'pagar_multa', label:'Pagarle la multa desde el club', effects:{playerRelation:2, clubRelation:-1}, mood:2, note:'El club se hizo cargo del inconveniente.' },
-    { key:'que_se_arregle', label:'Que se las arregle solo', effects:{playerRelation:-1, clubRelation:1}, mood:-1, note:'Le dejaste la resolución del tema en sus manos.' },
+    { key:'pagar_multa', label:'Pagarle la multa desde el club', effects:{playerRelation:2, clubRelation:-1}, mood:2, sidelineMatches:1, sidelineReason:'afectado por el episodio de tránsito', note:'El club se hizo cargo del inconveniente, pero no va a estar disponible para el próximo partido.' },
+    { key:'que_se_arregle', label:'Que se las arregle solo', effects:{playerRelation:-1, clubRelation:1}, mood:-1, sidelineMatches:1, sidelineReason:'afectado por el episodio de tránsito', note:'Le dejaste la resolución del tema en sus manos: no va a estar disponible para el próximo partido.' },
   ],
 
   // ---- Eventos más bizarros/divertidos, sumados a pedido ----
   albergue_transitorio: () => [
-    { key:'desmentir_albergue', label:'Salir a desmentirlo públicamente', effects:{pressRelation:2, playerRelation:-2}, mood:-3, note:'Saliste a bajarle el tono al escándalo ante los medios.' },
-    { key:'manejar_privado', label:'Dejar que se maneje en privado', effects:{pressRelation:-2, playerRelation:2}, mood:2, note:'Preferiste no meterte en la vida privada del jugador.' },
+    { key:'desmentir_albergue', label:'Salir a desmentirlo públicamente', effects:{pressRelation:2, playerRelation:-2}, mood:-3, sidelineMatches:1, sidelineReason:'bajo presión mediática por el escándalo', note:'Saliste a bajarle el tono, pero no va a estar disponible para el próximo partido.' },
+    { key:'manejar_privado', label:'Dejar que se maneje en privado', effects:{pressRelation:-2, playerRelation:2}, mood:2, sidelineMatches:1, sidelineReason:'bajo presión mediática por el escándalo', note:'Preferiste no meterte, pero no va a estar disponible para el próximo partido.' },
   ],
   // Pedido del usuario: "cuando se filtra video íntimo de un jugador siendo infiel... que me
   // diga que ese jugador por lo menos no puede jugar el próximo partido por el nivel de
@@ -5810,51 +6005,51 @@ const DECISION_CONFIGS = {
   // resuelvan solos, ninguno se pierde nada -- ahí sí tiene sentido que no haya ausencia.
   trio_vestuario: () => [
     { key:'separarlos_trio', label:'Separarlos en la próxima convocatoria', effects:{personality:2, clubRelation:1}, moodSplit:[-2,-2], sidelineMatches:1, sidelineAll:true, sidelineReason:'separados por el conflicto personal', note:'Preferiste bajarle el fuego separándolos: ninguno de los dos va a estar en la próxima convocatoria.' },
-    { key:'resolver_solos_trio', label:'Dejar que lo resuelvan entre ellos', effects:{personality:-1}, moodSplit:[1,1], note:'Confiaste en que son adultos y pueden resolverlo solos. Siguen disponibles los dos.' },
+    { key:'resolver_solos_trio', label:'Dejar que lo resuelvan entre ellos', effects:{personality:-1}, moodSplit:[1,1], sidelineMatches:1, sidelineAll:true, sidelineReason:'con el clima todavía tenso tras el conflicto', note:'Confiaste en que son adultos y pueden resolverlo solos, pero el clima entre los dos sigue tan tenso que ninguno llega a estar disponible para el próximo partido.' },
   ],
   boda_relampago: () => [
-    { key:'festejar_boda', label:'Festejarlo con el equipo', effects:{playerRelation:3, personality:-1}, mood:4, note:'El plantel armó un festejo espontáneo por la noticia.' },
-    { key:'enfocarse_deportivo', label:'Pedirle que se enfoque en lo deportivo', effects:{playerRelation:-2, clubRelation:1}, mood:-3, note:'Le remarcaste que hay un objetivo deportivo por delante.' },
+    { key:'festejar_boda', label:'Festejarlo con el equipo', effects:{playerRelation:3, personality:-1}, mood:4, sidelineMatches:1, sidelineReason:'de luna de miel', note:'El plantel armó un festejo espontáneo, y se va de luna de miel: no va a estar disponible para el próximo partido.' },
+    { key:'enfocarse_deportivo', label:'Pedirle que se enfoque en lo deportivo', effects:{playerRelation:-2, clubRelation:1}, mood:-3, sidelineMatches:1, sidelineReason:'de luna de miel', note:'Le remarcaste las prioridades, pero igual se toma unos días de luna de miel: no va a estar disponible para el próximo partido.' },
   ],
   reality_show: () => [
-    { key:'autorizar_reality', label:'Autorizarlo', effects:{playerRelation:2, pressRelation:1}, mood:3, note:'Le diste el visto bueno para su participación.' },
-    { key:'solo_futbol', label:'Pedirle que se enfoque solo en el fútbol', effects:{playerRelation:-2, clubRelation:1}, mood:-3, note:'Le remarcaste las prioridades del momento.' },
+    { key:'autorizar_reality', label:'Autorizarlo', effects:{playerRelation:2, pressRelation:1}, mood:3, sidelineMatches:1, sidelineReason:'participando de Gran Hermano', note:'Le diste el visto bueno para su participación: no va a estar disponible para el próximo partido.' },
+    { key:'solo_futbol', label:'Pedirle que se enfoque solo en el fútbol', effects:{playerRelation:-2, clubRelation:1}, mood:-3, sidelineMatches:1, sidelineReason:'distraído por el revuelo de Gran Hermano', note:'Le remarcaste las prioridades, pero el revuelo mediático ya generado lo deja afuera del próximo partido.' },
   ],
   secta_vestuario: () => [
-    { key:'permitir_secta', label:'Permitirlo, no molesta a nadie', effects:{playerRelation:2, personality:-1}, mood:3, note:'Le diste el visto bueno, siempre que no interfiera con el trabajo.' },
-    { key:'cortar_secta', label:'Cortarlo de raíz', effects:{playerRelation:-2, personality:2}, mood:-3, note:'Le pediste que corte con esas prácticas dentro del predio.' },
+    { key:'permitir_secta', label:'Permitirlo, no molesta a nadie', effects:{playerRelation:2, personality:-1}, mood:3, sidelineMatches:1, sidelineReason:'afectado por la práctica ritual', note:'Le diste el visto bueno, pero no va a estar disponible para el próximo partido.' },
+    { key:'cortar_secta', label:'Cortarlo de raíz', effects:{playerRelation:-2, personality:2}, mood:-3, sidelineMatches:1, sidelineReason:'afectado por la práctica ritual', note:'Le pediste que corte con esas prácticas, y no va a estar disponible para el próximo partido.' },
   ],
   incendio_asado: () => [
-    { key:'ayudar_alojamiento', label:'Ayudarlo con alojamiento del club', effects:{clubRelation:-2, playerRelation:3}, mood:4, note:'El club le dio una mano en un momento difícil.' },
-    { key:'que_se_arregle_asado', label:'Que se las arregle por su cuenta', effects:{playerRelation:-2, clubRelation:1}, mood:-3, note:'Le dejaste la resolución del problema en sus manos.' },
+    { key:'ayudar_alojamiento', label:'Ayudarlo con alojamiento del club', effects:{clubRelation:-2, playerRelation:3}, mood:4, sidelineMatches:1, sidelineReason:'afectado por el incendio en su casa', note:'El club le dio una mano en un momento difícil, pero no va a estar disponible para el próximo partido.' },
+    { key:'que_se_arregle_asado', label:'Que se las arregle por su cuenta', effects:{playerRelation:-2, clubRelation:1}, mood:-3, sidelineMatches:1, sidelineReason:'afectado por el incendio en su casa', note:'Le dejaste la resolución del problema en sus manos: no va a estar disponible para el próximo partido.' },
   ],
   prediccion_redes: () => [
-    { key:'reirse_prediccion', label:'Tomárselo con humor', effects:{playerRelation:1, personality:1}, mood:2, note:'El plantel se rio de la ocurrencia sin darle más vueltas.' },
-    { key:'pedir_bajar_perfil', label:'Pedirle que baje el perfil en redes', effects:{playerRelation:-2, pressRelation:1}, mood:-2, note:'Le remarcaste que ese tipo de publicaciones generan presión innecesaria.' },
+    { key:'reirse_prediccion', label:'Tomárselo con humor', effects:{playerRelation:1, personality:1}, mood:2, sidelineMatches:1, sidelineReason:'bajo presión mediática por la predicción', note:'El plantel se rio de la ocurrencia, pero no va a estar disponible para el próximo partido.' },
+    { key:'pedir_bajar_perfil', label:'Pedirle que baje el perfil en redes', effects:{playerRelation:-2, pressRelation:1}, mood:-2, sidelineMatches:1, sidelineReason:'bajo presión mediática por la predicción', note:'Le remarcaste que esas publicaciones generan presión innecesaria, y no va a estar disponible para el próximo partido.' },
   ],
   rapada_solidaria: () => [
-    { key:'sumarse_solidaria', label:'Sumarte públicamente al gesto', effects:{fanRelation:3, pressRelation:1}, mood:4, note:'Te sumaste vos también a la causa solidaria, la gente lo valoró.' },
-    { key:'consultar_antes', label:'Pedirle que la próxima consulte antes', effects:{playerRelation:-1, clubRelation:1}, mood:-1, note:'Le pediste que avise antes de hacer este tipo de gestos públicos.' },
+    { key:'sumarse_solidaria', label:'Sumarte públicamente al gesto', effects:{fanRelation:3, pressRelation:1}, mood:4, sidelineMatches:1, sidelineReason:'recuperándose de la rapada solidaria', note:'Te sumaste vos también a la causa, pero no va a estar disponible para el próximo partido.' },
+    { key:'consultar_antes', label:'Pedirle que la próxima consulte antes', effects:{playerRelation:-1, clubRelation:1}, mood:-1, sidelineMatches:1, sidelineReason:'recuperándose de la rapada solidaria', note:'Le pediste que avise antes, y no va a estar disponible para el próximo partido.' },
   ],
   encerrado_gimnasio: () => [
-    { key:'reirse_gimnasio', label:'Reírse del blooper', effects:{playerRelation:2, personality:1}, mood:2, note:'El vestuario se rio del papelón sin hacer drama.' },
-    { key:'sancionar_utilero', label:'Reforzar los protocolos y sancionar al responsable', effects:{clubRelation:1, personality:1}, mood:-1, note:'Exigiste que esto no vuelva a pasar.' },
+    { key:'reirse_gimnasio', label:'Reírse del blooper', effects:{playerRelation:2, personality:1}, mood:2, sidelineMatches:1, sidelineReason:'afectado tras quedar encerrado en el gimnasio', note:'El vestuario se rio del papelón, pero no va a estar disponible para el próximo partido.' },
+    { key:'sancionar_utilero', label:'Reforzar los protocolos y sancionar al responsable', effects:{clubRelation:1, personality:1}, mood:-1, sidelineMatches:1, sidelineReason:'afectado tras quedar encerrado en el gimnasio', note:'Exigiste que esto no vuelva a pasar, pero no va a estar disponible para el próximo partido.' },
   ],
   fumar_vestuario: () => [
     { key:'sancionar_fumar_vestuario', label:'Sancionarlo con dureza', effects:{playerRelation:-3, clubRelation:3}, mood:-5, sidelineMatches:1, sidelineReason:'sancionado por fumar en el vestuario', note:'Aplicaste una sanción ejemplar: no va a estar disponible para el próximo partido.' },
-    { key:'hablar_privado_fumar', label:'Hablarlo en privado sin trascendencia', effects:{playerRelation:2, clubRelation:-1}, mood:2, note:'Preferiste manejarlo puertas adentro sin escalar el conflicto.' },
+    { key:'hablar_privado_fumar', label:'Hablarlo en privado sin trascendencia', effects:{playerRelation:2, clubRelation:-1}, mood:2, sidelineMatches:1, sidelineReason:'afectado por el episodio', note:'Preferiste manejarlo puertas adentro, pero no va a estar disponible para el próximo partido.' },
   ],
   tatuaje_aguila: () => [
     { key:'multar_tatuaje', label:'Multarlo por no pedir autorización médica', effects:{clubRelation:2, playerRelation:-2}, mood:-3, note:'Le marcaste que estas decisiones hay que consultarlas antes.' },
     { key:'dejar_pasar_tatuaje', label:'Dejarlo pasar, son sus días libres', effects:{playerRelation:2, clubRelation:-1}, mood:2, note:'Respetaste su tiempo libre sin hacer un problema.' },
   ],
   despedida_soltero: () => [
-    { key:'permitir_despedida', label:'Dejarlo pasar, fue un gesto sin mala intención', effects:{playerRelation:3, clubRelation:-1}, mood:4, note:'Entendiste la ocasión especial y no lo tomaste a mal.' },
-    { key:'recordar_protocolo', label:'Recordarle que hay que pedir autorización', effects:{playerRelation:-2, clubRelation:2}, mood:-3, note:'Le marcaste que las instalaciones del club no son de uso libre.' },
+    { key:'permitir_despedida', label:'Dejarlo pasar, fue un gesto sin mala intención', effects:{playerRelation:3, clubRelation:-1}, mood:4, sidelineMatches:1, sidelineReason:'recuperándose de la despedida de soltero', note:'Entendiste la ocasión especial, pero no va a estar disponible para el próximo partido.' },
+    { key:'recordar_protocolo', label:'Recordarle que hay que pedir autorización', effects:{playerRelation:-2, clubRelation:2}, mood:-3, sidelineMatches:1, sidelineReason:'recuperándose de la despedida de soltero', note:'Le marcaste que hay que pedir autorización, y no va a estar disponible para el próximo partido.' },
   ],
   duelo_picante: () => [
-    { key:'reirse_duelo', label:'Reírse y no darle más entidad', effects:{personality:1, playerRelation:1}, moodBoth:1, note:'El plantel se rio del episodio sin mayores consecuencias.' },
-    { key:'prohibir_duelos', label:'Prohibir este tipo de desafíos en el vestuario', effects:{clubRelation:1, personality:1}, moodBoth:-2, note:'Pusiste un límite claro para que no se repita.' },
+    { key:'reirse_duelo', label:'Reírse y no darle más entidad', effects:{personality:1, playerRelation:1}, moodBoth:1, sidelineMatches:1, sidelineAll:true, sidelineReason:'con molestias tras el desafío físico', note:'El plantel se rio del episodio, pero el desafío les dejó molestias físicas a los dos: no van a estar disponibles para el próximo partido.' },
+    { key:'prohibir_duelos', label:'Prohibir este tipo de desafíos en el vestuario', effects:{clubRelation:1, personality:1}, moodBoth:-2, sidelineMatches:1, sidelineAll:true, sidelineReason:'con molestias tras el desafío físico', note:'Pusiste un límite claro, pero el desafío ya les dejó molestias físicas a los dos para el próximo partido.' },
   ],
   finance_compliance: (ev) => [
     { key:'cumplido', label:'Sí, la respeté', effects:{clubRelation:6}, financeOutcome:'cumplido', note:'La dirigencia valora tu responsabilidad financiera. Se levanta la restricción.' },
@@ -6327,27 +6522,34 @@ function markObjectiveNow(comp, met){
 // repercuta bien en las barras". Ahora sí es un deshacer de verdad: revierte exactamente el
 // efecto que ese registro había aplicado (usando su propia prioridad/resultado guardado), antes
 // de sacar la marca y el registro, así que deshacer + volver a cargar da un neto de cero.
-function undoResolvedObjective(comp){
-  if(!confirm(`¿Deshacer el registro de "${comp}" de esta temporada? Vas a poder volver a cargarlo. Esto revierte el efecto que tuvo en tus barras (y en el título, si correspondía).`)) return;
+// Revierte el registro "a mitad de temporada" (objetivo u, ahora también, título automático de
+// una final ganada) de una competencia: el efecto exacto en las barras, el conteo de títulos si
+// correspondía, y la marca de "ya registrado esta temporada". Factorizado de undoResolvedObjective
+// para que saveResult (al corregir el resultado de una final ya cargada) pueda usar exactamente
+// el mismo camino de reversión, en vez de duplicar la lógica.
+function revertResolvedObjectiveEffects(comp){
   if(state.profile.competitionResolvedThisSeason) delete state.profile.competitionResolvedThisSeason[comp];
   const season = state.season.year || '—';
   const idx = state.trophies.findIndex(t => t.competition === comp && t.season === season && t.midSeason);
-  if(idx !== -1){
-    const entry = state.trophies[idx];
-    // Pedido del usuario: el castigo por objetivo no cumplido ahora puede estar escalado según
-    // cercanía (no siempre es la tabla fija de PRIORITY_PENALTY). appliedEffects guarda el
-    // efecto EXACTO que se aplicó en su momento -- deshacer usa siempre ese valor si está
-    // disponible, y solo cae a la tabla fija para registros viejos guardados antes de este
-    // cambio (que nunca tuvieron appliedEffects).
-    const table = entry.appliedEffects || (entry.met ? PRIORITY_BONUS[entry.priority] : PRIORITY_PENALTY[entry.priority]);
-    if(table){
-      adjustStatRaw('clubRelation', -table.clubRelation);
-      adjustStatRaw('fanRelation', -table.fanRelation);
-      adjustStatRaw('playerRelation', -table.playerRelation);
-    }
-    if(entry.trophy) state.stintStats.titles = Math.max(0, state.stintStats.titles - 1);
-    state.trophies.splice(idx, 1);
+  if(idx === -1) return;
+  const entry = state.trophies[idx];
+  // Pedido del usuario: el castigo por objetivo no cumplido ahora puede estar escalado según
+  // cercanía (no siempre es la tabla fija de PRIORITY_PENALTY). appliedEffects guarda el
+  // efecto EXACTO que se aplicó en su momento -- deshacer usa siempre ese valor si está
+  // disponible, y solo cae a la tabla fija para registros viejos guardados antes de este
+  // cambio (que nunca tuvieron appliedEffects).
+  const table = entry.appliedEffects || (entry.met ? PRIORITY_BONUS[entry.priority] : PRIORITY_PENALTY[entry.priority]);
+  if(table){
+    adjustStatRaw('clubRelation', -table.clubRelation);
+    adjustStatRaw('fanRelation', -table.fanRelation);
+    adjustStatRaw('playerRelation', -table.playerRelation);
   }
+  if(entry.trophy) state.stintStats.titles = Math.max(0, state.stintStats.titles - 1);
+  state.trophies.splice(idx, 1);
+}
+function undoResolvedObjective(comp){
+  if(!confirm(`¿Deshacer el registro de "${comp}" de esta temporada? Vas a poder volver a cargarlo. Esto revierte el efecto que tuvo en tus barras (y en el título, si correspondía).`)) return;
+  revertResolvedObjectiveEffects(comp);
   renderProfile();
   renderTrophies();
   renderTrophyCabinet();
@@ -6423,6 +6625,48 @@ document.getElementById('closeSeasonBtn').addEventListener('click', () => {
 // vuelve a aplicar ni deshacer el efecto en las barras, para no poder "farmear" relación
 // editando trofeos viejos para arriba y para abajo.
 let editingTrophyIdx = null;
+
+// Pedido del usuario: "que los títulos se puedan agregar manualmente también, sin necesidad de
+// que finalice la temporada". Abre/cierra el formulario de carga manual y lo precarga con la
+// lista de competencias ya definidas (para completar rápido, sin impedir escribir cualquier
+// otro nombre a mano).
+function toggleManualTrophyForm(){
+  const box = document.getElementById('manualTrophyForm');
+  const opening = box.style.display === 'none';
+  box.style.display = opening ? 'block' : 'none';
+  if(opening){
+    document.getElementById('manualTrophyComp').value = '';
+    document.getElementById('manualTrophyDetail').value = '';
+    document.getElementById('manualTrophyPriority').value = 'medio';
+    document.getElementById('manualTrophySeasonLabel').textContent = state.season.year || state.profile.year || '—';
+    document.getElementById('manualTrophyCompList').innerHTML = (state.profile.competitions || [])
+      .map(c => `<option value="${c.replace(/"/g,'&quot;')}">`).join('');
+  }
+}
+// Registra un título SIN esperar al cierre de temporada. Reusa applyObjectiveOutcome (el mismo
+// motor que usa el cierre de temporada y markObjectiveNow) para que el título cuente igual para
+// las barras y el conteo de títulos, dispare el festejo, y quede protegido por el mismo
+// deshacer (undoResolvedObjective) si hace falta corregirlo -- no es un camino aparte que pueda
+// generar un título que no se pueda revertir prolijamente.
+function saveManualTrophy(){
+  const comp = document.getElementById('manualTrophyComp').value.trim();
+  if(!comp){ alert('Escribí el nombre de la competencia.'); return; }
+  const priority = document.getElementById('manualTrophyPriority').value || 'medio';
+  const detail = document.getElementById('manualTrophyDetail').value.trim();
+  const wonTitle = applyObjectiveOutcome(comp, 'Ganar el título', priority, true, detail || 'Campeón', true);
+  if(!state.profile.competitionResolvedThisSeason) state.profile.competitionResolvedThisSeason = {};
+  state.profile.competitionResolvedThisSeason[comp] = detail || 'Campeón';
+  toggleManualTrophyForm();
+  renderProfile();
+  renderTrophies();
+  renderTrophyCabinet();
+  renderCloseSeasonRows();
+  checkExtremeStates();
+  persist();
+  if(wonTitle && document.getElementById('eventAlertModal').style.display !== 'flex'){
+    showTitleCelebration(comp);
+  }
+}
 
 function renderTrophies(){
   const list = document.getElementById('trophyList');
