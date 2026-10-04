@@ -1261,7 +1261,7 @@
 // una esquina fija de la pantalla (#buildBadge) además de en el header de adentro del juego
 // (#headerBuildLine), para poder confirmar sin dudas si dos dispositivos están corriendo el
 // mismo archivo. Para la próxima entrega, alcanza con cambiar este único string.
-const BUILD_ID = 'RULEBATCH-23';
+const BUILD_ID = 'RULEBATCH-25';
 document.getElementById('buildBadge').textContent = BUILD_ID;
 const headerBuildLineEl = document.getElementById('headerBuildLine');
 if(headerBuildLineEl) headerBuildLineEl.textContent = `build ${BUILD_ID}`;
@@ -1412,7 +1412,7 @@ function rivalPoolFor(competition){
   return [];
 }
 
-const CUP_COMPETITIONS = new Set(['FA Cup','EFL Cup','Copa del Rey','Coppa Italia','DFB-Pokal','Copa de Francia','Copa Argentina','Champions League','Europa League','Conference League','Copa Libertadores','Copa Sudamericana','Concachampions','Leagues Cup','US Open Cup','Copa del Mundo','Copa Continental','Copa del Rey de Arabia Saudita','Supercopa de Arabia Saudita','Champions League Asiática']);
+const CUP_COMPETITIONS = new Set(['FA Cup','EFL Cup','Copa del Rey','Coppa Italia','DFB-Pokal','Copa de Francia','Copa Argentina','Champions League','Europa League','Conference League','Copa Libertadores','Copa Sudamericana','Recopa Sudamericana','Concachampions','Leagues Cup','US Open Cup','Copa del Mundo','Copa Continental','Copa del Rey de Arabia Saudita','Supercopa de Arabia Saudita','Champions League Asiática']);
 const FRIENDLY_COMPETITIONS = new Set(['Amistoso Internacional']);
 
 // Pedido del usuario: "que todo salga seccionado... porque si yo escribo que voy primero no sé
@@ -1566,6 +1566,18 @@ function findTieSibling(m){
 // final. A propósito esto NO toca el Palmarés/los títulos -- eso sigue siendo responsabilidad
 // exclusiva del cierre de temporada (closeSeasonBtn/markObjectiveNow), para no abrir una segunda
 // vía que pueda generar títulos fantasma.
+// Pedido del usuario: agregar competencias "bonus" que aparecen sueltas, fuera de la temporada
+// declarada (el caso que dio como ejemplo: la Recopa Sudamericana, que te toca jugar recién
+// DESPUÉS de salir campeón de la Libertadores o la Sudamericana, así que nunca va a estar en la
+// lista de competencias que elegiste al armar la temporada). "Que tenga menos repercusión
+// favorable o negativa... obviamente no hay objetivo, pero que no sea un partido más" -- y
+// confirmó que, al ser partido único y final, SÍ debe contar como título si se gana (eso ya lo
+// hace solo el mecanismo de "ganar la final = campeón" de más abajo, independiente de la
+// prioridad). Este factor se aplica únicamente a partidos de una competencia que NO está en la
+// lista de competencias de la temporada (isExtraComp, definido en saveResult): a la mitad del
+// efecto normal del partido y de TIE_DECIDED_BONUS, y fuerza la prioridad más baja para el bonus
+// de título -- menos que una competencia de la temporada, pero lejos de no tener ningún efecto.
+const EXTRA_COMP_DAMPEN = 0.5;
 const TIE_DECIDED_BONUS = {
   octavos:   { avanza:{ personality:2, clubRelation:4,  fanRelation:5,  playerRelation:3, pressRelation:2, reputation:4  }, eliminado:{ personality:-2, clubRelation:-6,  fanRelation:-8,  playerRelation:-4, pressRelation:-3, reputation:-4  } },
   cuartos:   { avanza:{ personality:3, clubRelation:6,  fanRelation:7,  playerRelation:4, pressRelation:2, reputation:6  }, eliminado:{ personality:-3, clubRelation:-8,  fanRelation:-10, playerRelation:-5, pressRelation:-3, reputation:-6  } },
@@ -2865,7 +2877,12 @@ function populateMatchCompOptions(){
   if(comps && comps.length){
     compSelect.style.display = 'block';
     compText.style.display = 'none';
-    compSelect.innerHTML = comps.map(c => `<option value="${c}">${c}</option>`).join('');
+    // Pedido del usuario: poder agregar una competencia "extra" que no formó parte de la
+    // temporada declarada (ej: la Recopa Sudamericana, que recién se juega DESPUÉS de salir
+    // campeón de la Libertadores/Sudamericana, así que nunca iba a estar en esta lista fija).
+    // Mismo patrón que "Otro" en el selector de rival: se puede escribir cualquier nombre a mano.
+    compSelect.innerHTML = comps.map(c => `<option value="${c}">${c}</option>`).join('')
+      + `<option value="__otro__">Otro (agregar otra competencia)</option>`;
   } else {
     compSelect.style.display = 'none';
     compText.style.display = 'block';
@@ -2907,7 +2924,21 @@ document.getElementById('mRivalSelect').addEventListener('change', () => {
     rivalInput.focus();
   }
 });
-document.getElementById('mComp').addEventListener('change', updateMatchFormForComp);
+// Mismo mecanismo que "Otro" en el rival: elegir "Otro (agregar otra competencia)" cambia a
+// texto libre, para competencias que surgen sueltas a mitad de camino (ver EXTRA_COMP_DAMPEN).
+document.getElementById('mComp').addEventListener('change', () => {
+  const compSelect = document.getElementById('mComp');
+  const compText = document.getElementById('mCompText');
+  if(compSelect.value === '__otro__'){
+    compSelect.style.display = 'none';
+    compText.style.display = 'block';
+    compText.placeholder = 'Escribí el nombre de la competencia';
+    compText.value = '';
+    compText.focus();
+    return;
+  }
+  updateMatchFormForComp();
+});
 document.getElementById('mCompText').addEventListener('input', updateMatchFormForComp);
 
 document.getElementById('addMatch').addEventListener('click', () => {
@@ -2922,6 +2953,10 @@ document.getElementById('addMatch').addEventListener('click', () => {
   state.matches.push({ id: allocateId(), rival, date, comp, importance: importanceValue, status:'pendiente', event:null, result:null });
   document.getElementById('mRival').value='';
   document.getElementById('mDate').value='';
+  // Si se usó "Otro (agregar otra competencia)" para cargar una competencia extra (ver
+  // EXTRA_COMP_DAMPEN), el formulario vuelve al desplegable normal para el próximo partido, en
+  // vez de quedarse pegado en modo texto libre con el nombre ya escrito.
+  populateMatchCompOptions();
   renderMatches();
   renderGameDate();
   renderOnboardingChecklist();
@@ -3295,18 +3330,23 @@ document.getElementById('saveResult').addEventListener('click', () => {
   const oldResult = isEdit ? { ...m.result } : null;
   const info = m.importance ? importanceInfo(m.comp, m.importance) : null;
   const mult = info ? info.mult : 1;
+  // Una competencia "extra", que no forma parte de la lista de competencias de la temporada
+  // (ver EXTRA_COMP_DAMPEN más arriba) -- típicamente una que se gana el derecho a jugar recién
+  // a mitad de camino (la Recopa Sudamericana tras salir campeón de la Libertadores/Sudamericana).
+  const isExtraComp = !!(state.profile.competitions && state.profile.competitions.length && !state.profile.competitions.includes(m.comp));
+  const effectiveMult = isExtraComp ? mult * EXTRA_COMP_DAMPEN : mult;
 
   if(isEdit){
     const oldOutcome = computeMatchOutcome(oldResult.home, oldResult.away, oldResult.penaltyWinner || null);
-    Object.entries(oldOutcome.effects).forEach(([stat, val]) => { if(val !== 0) adjustStatRaw(stat, -val * mult); });
+    Object.entries(oldOutcome.effects).forEach(([stat, val]) => { if(val !== 0) adjustStatRaw(stat, -val * effectiveMult); });
     if(oldOutcome.outcome === 'win'){
       state.stintStats.won = Math.max(0, state.stintStats.won - 1);
       state.stintStats.played = Math.max(0, state.stintStats.played - 1);
-      state.reputation -= Math.round(3*mult);
+      state.reputation -= Math.round(3*effectiveMult);
     } else if(oldOutcome.outcome === 'loss'){
       state.stintStats.lost = Math.max(0, state.stintStats.lost - 1);
       state.stintStats.played = Math.max(0, state.stintStats.played - 1);
-      state.reputation += Math.round(3*mult);
+      state.reputation += Math.round(3*effectiveMult);
       state.consecutiveLosses = Math.max(0, (state.consecutiveLosses||0) - 1);
     } else {
       state.stintStats.drawn = Math.max(0, state.stintStats.drawn - 1);
@@ -3324,7 +3364,11 @@ document.getElementById('saveResult').addEventListener('click', () => {
       // final que YA había quedado como "avanza" (campeón), hay que deshacer también ESE título
       // automático antes de recalcular -- si no, corregir el marcador podía dejar un título
       // fantasma pegado aunque el resultado real haya cambiado a una derrota.
-      if(oldResult.tieDecision.phase === 'final' && oldResult.tieDecision.outcome === 'avanza'){
+      // Cubre tanto el título automático (ganar la final) como el nuevo registro automático del
+      // objetivo al quedar eliminado en cualquier fase: si esta eliminación/avance ya había
+      // resuelto el objetivo de la competencia, hay que deshacer ESE efecto también antes de
+      // recalcular con el resultado corregido.
+      if(oldResult.tieDecision.objectiveAutoResolved){
         revertResolvedObjectiveEffects(m.comp);
       }
     }
@@ -3365,14 +3409,14 @@ document.getElementById('saveResult').addEventListener('click', () => {
   const outcome = computeMatchOutcome(home, away, penaltyWinner);
 
   Object.entries(outcome.effects).forEach(([stat, val]) => {
-    if(val !== 0) adjustStatRaw(stat, val * mult);
+    if(val !== 0) adjustStatRaw(stat, val * effectiveMult);
   });
 
   if(outcome.outcome === 'win'){
     state.consecutiveLosses = 0;
     state.stintStats.played += 1;
     state.stintStats.won += 1;
-    state.reputation += Math.round(3*mult);
+    state.reputation += Math.round(3*effectiveMult);
     if(isBigMatch && !isEdit){
       state.eventHistory.unshift({
         matchId: m.id, rival: m.rival, date: m.date,
@@ -3385,7 +3429,7 @@ document.getElementById('saveResult').addEventListener('click', () => {
     state.consecutiveLosses = (state.consecutiveLosses || 0) + 1;
     state.stintStats.played += 1;
     state.stintStats.lost += 1;
-    state.reputation -= Math.round(3*mult);
+    state.reputation -= Math.round(3*effectiveMult);
     if(isBigMatch && !isEdit){
       state.eventHistory.unshift({
         matchId: m.id, rival: m.rival, date: m.date,
@@ -3438,7 +3482,13 @@ document.getElementById('saveResult').addEventListener('click', () => {
     // no se aplica ningún bonus fantasma de "avanzó"/"quedó eliminado" sin que de verdad se sepa.
     if(seriesResult){
       const table = TIE_DECIDED_BONUS[copaPhaseLeg.phase][seriesResult];
-      const { reputation: repDelta, ...statEffects } = table;
+      const { reputation: rawRepDelta, ...rawStatEffects } = table;
+      // Competencia "extra" (ver EXTRA_COMP_DAMPEN): a la mitad, para que pese menos que avanzar
+      // o quedar eliminado en una competencia de verdad declarada para la temporada.
+      const statEffects = isExtraComp
+        ? Object.fromEntries(Object.entries(rawStatEffects).map(([k,v]) => [k, Math.round(v*EXTRA_COMP_DAMPEN)]))
+        : rawStatEffects;
+      const repDelta = isExtraComp ? Math.round(rawRepDelta*EXTRA_COMP_DAMPEN) : rawRepDelta;
       Object.entries(statEffects).forEach(([stat, val]) => { if(val !== 0) adjustStatRaw(stat, val); });
       state.reputation += repDelta;
       tieDecisionApplied = { phase: copaPhaseLeg.phase, outcome: seriesResult, effects: statEffects, reputationDelta: repDelta };
@@ -3465,10 +3515,37 @@ document.getElementById('saveResult').addEventListener('click', () => {
       // títulos y disparar el festejo. Se marca "ya registrado esta temporada" para esa
       // competencia, así si más tarde se cierra la temporada no se cuenta dos veces.
       if(!isEdit && copaPhaseLeg.phase === 'final' && seriesResult === 'avanza'){
-        const priority = (state.profile.competitionPriority && state.profile.competitionPriority[m.comp]) || 'medio';
+        // Una competencia "extra" no tiene objetivo/prioridad declarados -- se fuerza la
+        // prioridad más baja (igual cuenta como título real en el Palmarés, solo que con menos
+        // impacto en las barras que un título de una competencia de la temporada).
+        const priority = isExtraComp ? 'bajo' : ((state.profile.competitionPriority && state.profile.competitionPriority[m.comp]) || 'medio');
         autoTitleWon = applyObjectiveOutcome(m.comp, 'Ganar el título', priority, true, 'campeon', true);
         if(!state.profile.competitionResolvedThisSeason) state.profile.competitionResolvedThisSeason = {};
         state.profile.competitionResolvedThisSeason[m.comp] = 'Campeón';
+        tieDecisionApplied.objectiveAutoResolved = true;
+      }
+      // Bug real reportado por el usuario: "perdí las semis... me bajó las barras pero no mucho.
+      // Pero el objetivo seguía vigente... tuve que poner que no se cumplió y por ende me volvió
+      // a bajar la barra. No tiene sentido". Quedar ELIMINADO de una copa, en CUALQUIER fase, ya
+      // define de una vez y para siempre si el objetivo declarado para esa competencia se cumplió
+      // o no (si el objetivo era "llegar a la final" y quedaste eliminado en semis, ya se sabe que
+      // no se cumplió -- no hace falta esperar al cierre de temporada para que el usuario lo
+      // escriba a mano, y mucho menos aplicar el castigo DOS VECES: una sola, automática, apenas
+      // se decide la serie, usando el mismo motor de siempre (con el mismo castigo escalado por
+      // cercanía). Se marca "ya registrado esta temporada" para que el cierre de temporada no
+      // vuelva a preguntar ni a pegarle una segunda vez a la misma eliminación.
+      if(!isEdit && seriesResult === 'eliminado'){
+        const resolvedAlready = state.profile.competitionResolvedThisSeason && state.profile.competitionResolvedThisSeason[m.comp];
+        const objective = (state.profile.competitionObjectives && state.profile.competitionObjectives[m.comp]) || 'Sin objetivo definido';
+        const targetPhase = OBJECTIVE_TO_CUP_PHASE_TARGET[objective];
+        if(!resolvedAlready && targetPhase){
+          const priority = (state.profile.competitionPriority && state.profile.competitionPriority[m.comp]) || 'medio';
+          const met = CUP_PHASE_SCORE[copaPhaseLeg.phase] >= CUP_PHASE_SCORE[targetPhase];
+          applyObjectiveOutcome(m.comp, objective, priority, met, copaPhaseLeg.phase, true);
+          if(!state.profile.competitionResolvedThisSeason) state.profile.competitionResolvedThisSeason = {};
+          state.profile.competitionResolvedThisSeason[m.comp] = met ? (copaPhaseLeg.phase || 'cumplido') : 'no cumplido';
+          tieDecisionApplied.objectiveAutoResolved = true;
+        }
       }
     }
   }
