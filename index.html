@@ -723,6 +723,17 @@
     ☁️ No se pudo sincronizar tu partida con la nube (puede ser falta de conexión). Se guardó localmente igual; cuando tengas señal se sincroniza sola.
   </div>
 
+  <!-- Bug real reportado por el usuario: "cada tanto me vuelve a aparecer que dirigí un club que
+  ya había borrado". Causa real: si esta pestaña/dispositivo queda abierto con datos VIEJOS (por
+  ejemplo, el celular con la app en segundo plano desde antes de borrar algo en la PC) y después
+  se usa para cargar cualquier cosa, el guardado de siempre pisaba la nube a ciegas con esa foto
+  vieja -- resucitando lo que ya se había corregido o borrado en otro dispositivo. Ahora, antes de
+  pisar la nube, se verifica que nadie guardó algo más nuevo desde otro lado; si lo hay, se avisa
+  acá en vez de pisarlo. -->
+  <div id="staleSessionBanner" style="display:none; background:#2a2410; border:1px solid #a68b1f; color:#f0d878; padding:10px 14px; border-radius:10px; margin-bottom:14px; font-family:'Barlow Condensed', sans-serif; font-size:14px; line-height:1.4;">
+    🔄 Guardaste algo más reciente desde otro dispositivo o pestaña. Para no pisar esos cambios, esta pestaña no sincronizó con la nube esta vez: recargá la página antes de seguir jugando acá.
+  </div>
+
   <nav id="tabs">
     <button data-tab="resumen" class="active">Inicio</button>
     <button data-tab="perfil">Perfil del DT</button>
@@ -1261,7 +1272,7 @@
 // una esquina fija de la pantalla (#buildBadge) además de en el header de adentro del juego
 // (#headerBuildLine), para poder confirmar sin dudas si dos dispositivos están corriendo el
 // mismo archivo. Para la próxima entrega, alcanza con cambiar este único string.
-const BUILD_ID = 'RULEBATCH-25';
+const BUILD_ID = 'RULEBATCH-26';
 document.getElementById('buildBadge').textContent = BUILD_ID;
 const headerBuildLineEl = document.getElementById('headerBuildLine');
 if(headerBuildLineEl) headerBuildLineEl.textContent = `build ${BUILD_ID}`;
@@ -1412,7 +1423,13 @@ function rivalPoolFor(competition){
   return [];
 }
 
-const CUP_COMPETITIONS = new Set(['FA Cup','EFL Cup','Copa del Rey','Coppa Italia','DFB-Pokal','Copa de Francia','Copa Argentina','Champions League','Europa League','Conference League','Copa Libertadores','Copa Sudamericana','Recopa Sudamericana','Concachampions','Leagues Cup','US Open Cup','Copa del Mundo','Copa Continental','Copa del Rey de Arabia Saudita','Supercopa de Arabia Saudita','Champions League Asiática']);
+const CUP_COMPETITIONS = new Set(['FA Cup','EFL Cup','Copa del Rey','Coppa Italia','DFB-Pokal','Copa de Francia','Copa Argentina','Champions League','Europa League','Conference League','Copa Libertadores','Copa Sudamericana','Recopa Sudamericana','Recopa Internacional','Concachampions','Leagues Cup','US Open Cup','Copa del Mundo','Copa Continental','Copa del Rey de Arabia Saudita','Supercopa de Arabia Saudita','Champions League Asiática']);
+// Pedido del usuario: la Recopa Internacional tiene que estar SIEMPRE disponible para elegir al
+// agregar un partido (no requiere haberla declarado al armar la temporada, porque justamente se
+// gana el derecho a jugarla recién después de salir campeón de una copa internacional). Se trata
+// como una competencia "extra" (EXTRA_COMP_DAMPEN) en todos los casos, ya que nunca forma parte
+// de state.profile.competitions.
+const ALWAYS_AVAILABLE_COMPETITIONS = ['Recopa Internacional'];
 const FRIENDLY_COMPETITIONS = new Set(['Amistoso Internacional']);
 
 // Pedido del usuario: "que todo salga seccionado... porque si yo escribo que voy primero no sé
@@ -1516,6 +1533,17 @@ const IMPORTANCE_OPTIONS = {
   ],
   amistoso: [
     { value:'amistoso', label:'Amistoso', mult:0.4 },
+  ],
+  // Pedido del usuario: la "Recopa Internacional" (el cruce que te toca jugar recién DESPUÉS de
+  // salir campeón de una copa internacional) solo tiene sentido de semifinales para arriba -- "que
+  // sea opcional elegir desde las semis a final. todo partido único o partido de ida y vuelta".
+  recopa: [
+    { value:'semifinal_unico',  label:'Semifinal — partido único', mult:2.3 },
+    { value:'semifinal_ida',    label:'Semifinal — ida', mult:1.8 },
+    { value:'semifinal_vuelta', label:'Semifinal — vuelta', mult:2.5 },
+    { value:'final_unico',      label:'Final — partido único', mult:3.0 },
+    { value:'final_ida',        label:'Final — ida', mult:2.4 },
+    { value:'final_vuelta',     label:'Final — vuelta', mult:3.2 },
   ],
 };
 // Migración de partidos viejos guardados con los valores genéricos que existían antes (ida,
@@ -2874,19 +2902,24 @@ function populateMatchCompOptions(){
   const comps = state.profile.competitions && state.profile.competitions.length
     ? state.profile.competitions.filter(c => !notPlayed[c])
     : null;
+  // Pedido del usuario: la Recopa Internacional (y cualquier otra competencia "extra" de este
+  // tipo) tiene que poder elegirse SIEMPRE, se haya declarado o no una lista de competencias para
+  // la temporada -- nunca va a estar en esa lista porque se gana el derecho a jugarla recién
+  // después de salir campeón de una copa internacional.
+  const alwaysAvailable = ALWAYS_AVAILABLE_COMPETITIONS.filter(c => !(comps||[]).includes(c));
   if(comps && comps.length){
     compSelect.style.display = 'block';
     compText.style.display = 'none';
-    // Pedido del usuario: poder agregar una competencia "extra" que no formó parte de la
-    // temporada declarada (ej: la Recopa Sudamericana, que recién se juega DESPUÉS de salir
-    // campeón de la Libertadores/Sudamericana, así que nunca iba a estar en esta lista fija).
-    // Mismo patrón que "Otro" en el selector de rival: se puede escribir cualquier nombre a mano.
+    // Además, "Otro" para cualquier otra competencia extra que no esté named acá -- mismo patrón
+    // que "Otro" en el selector de rival: se puede escribir cualquier nombre a mano.
     compSelect.innerHTML = comps.map(c => `<option value="${c}">${c}</option>`).join('')
+      + alwaysAvailable.map(c => `<option value="${c}">${c}</option>`).join('')
       + `<option value="__otro__">Otro (agregar otra competencia)</option>`;
   } else {
-    compSelect.style.display = 'none';
-    compText.style.display = 'block';
-    compSelect.innerHTML = '';
+    compSelect.style.display = 'block';
+    compText.style.display = 'none';
+    compSelect.innerHTML = alwaysAvailable.map(c => `<option value="${c}">${c}</option>`).join('')
+      + `<option value="__otro__">Otro (agregar otra competencia)</option>`;
   }
   updateMatchFormForComp();
 }
@@ -2910,8 +2943,10 @@ function updateMatchFormForComp(){
   }
 
   const importanceSelect = document.getElementById('mImportance');
-  const kind = comp ? competitionKind(comp) : 'liga';
-  importanceSelect.innerHTML = IMPORTANCE_OPTIONS[kind].map(o => `<option value="${o.value}">${o.label}</option>`).join('');
+  // Pedido del usuario: la Recopa Internacional solo tiene fases de semifinal y final (partido
+  // único o ida/vuelta) -- no fase de grupos/octavos/cuartos como una copa completa.
+  const importanceOptions = comp === 'Recopa Internacional' ? IMPORTANCE_OPTIONS.recopa : IMPORTANCE_OPTIONS[comp ? competitionKind(comp) : 'liga'];
+  importanceSelect.innerHTML = importanceOptions.map(o => `<option value="${o.value}">${o.label}</option>`).join('');
 }
 document.getElementById('mRivalSelect').addEventListener('change', () => {
   const rivalSelect = document.getElementById('mRivalSelect');
@@ -7157,6 +7192,10 @@ function showCloudSyncBanner(show){
   const banner = document.getElementById('cloudSyncFailBanner');
   if(banner) banner.style.display = show ? 'block' : 'none';
 }
+function showStaleSessionBanner(show){
+  const banner = document.getElementById('staleSessionBanner');
+  if(banner) banner.style.display = show ? 'block' : 'none';
+}
 
 function persistToCloud(){
   if(!currentUser || !cloudDb) return;
@@ -7177,10 +7216,29 @@ function persistToCloud(){
     showCloudSyncBanner(true);
     return;
   }
+  const ref = cloudDb.ref('saves/' + cloudKeyFor(currentUser));
+  // Bug real reportado por el usuario: "cada tanto me vuelve a aparecer que dirigí un club que ya
+  // había borrado" -- una pestaña/dispositivo que quedó con datos VIEJOS en memoria (por ejemplo,
+  // el celular en segundo plano desde antes de borrar algo en la PC) pisaba la nube a ciegas con
+  // esa foto vieja apenas se usaba para cualquier cosa, resucitando lo ya corregido/borrado en
+  // otro lado. Ahora, antes de escribir, se chequea si alguien más ya guardó algo más nuevo que
+  // lo que ESTA sesión conoce como propio (sessionBaselineSavedAt) -- si es así, esta sesión está
+  // desactualizada y no escribe (se avisa en vez de pisar).
   try{
-    cloudDb.ref('saves/' + cloudKeyFor(currentUser)).set(safePayload)
-      .then(() => showCloudSyncBanner(false))
-      .catch((e) => { console.warn('No se pudo sincronizar con la nube:', e); showCloudSyncBanner(true); });
+    ref.once('value').then(snap => {
+      const remote = snap.val();
+      if(remote && (remote.savedAt||0) > sessionBaselineSavedAt){
+        showStaleSessionBanner(true);
+        return;
+      }
+      showStaleSessionBanner(false);
+      ref.set(safePayload)
+        .then(() => { showCloudSyncBanner(false); sessionBaselineSavedAt = safePayload.savedAt; })
+        .catch((e) => { console.warn('No se pudo sincronizar con la nube:', e); showCloudSyncBanner(true); });
+    }).catch((e) => {
+      console.warn('No se pudo verificar la nube antes de guardar:', e);
+      showCloudSyncBanner(true);
+    });
   }catch(e){
     console.warn('No se pudo sincronizar con la nube:', e);
     showCloudSyncBanner(true);
@@ -7329,10 +7387,18 @@ function renderAll(){
 
 let currentUser = null;
 let currentPin = null;
+// Último "savedAt" que ESTA pestaña/dispositivo conoce como propio (lo que cargó al entrar, o lo
+// que ella misma acaba de guardar). Si al momento de guardar la nube tiene algo MÁS nuevo que
+// esto, significa que otro dispositivo/pestaña guardó algo después de que esta sesión arrancó --
+// esta sesión está desactualizada y no debe pisarlo (ver persistToCloud).
+let sessionBaselineSavedAt = 0;
 
 function startApp(user, pin, loadedData){
   currentUser = user;
   currentPin = pin;
+  // Esta sesión arranca "al día" con lo que acaba de cargar (o con 0 si es una cuenta nueva, sin
+  // nada guardado todavía en ningún lado). Ver sessionBaselineSavedAt / persistToCloud.
+  sessionBaselineSavedAt = (loadedData && loadedData.savedAt) || 0;
   if(loadedData){
     nextId = loadedData.nextId || nextId;
     Object.assign(state, loadedData.state);
