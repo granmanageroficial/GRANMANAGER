@@ -259,6 +259,21 @@
     color: var(--ink-dim);
   }
 
+  .unbeaten-card{
+    margin-top:18px; padding:18px 20px; border-radius:16px;
+    border:1px solid rgba(31,209,179,0.45);
+    background: linear-gradient(135deg, rgba(31,209,179,0.16), rgba(198,255,94,0.06) 60%, rgba(255,255,255,0.03));
+    display:flex; flex-wrap:wrap; gap:20px; align-items:center; justify-content:space-between;
+  }
+  .unbeaten-card .ub-kicker{ font-family:'Barlow Condensed',sans-serif; font-size:13px; letter-spacing:2px; text-transform:uppercase; color:var(--pitch); font-weight:700; }
+  .unbeaten-card .ub-big{ font-family:'Archivo Black',sans-serif; font-size:64px; line-height:1; color:var(--gold); margin-top:4px; }
+  .unbeaten-card .ub-big small{ font-family:'Barlow Condensed',sans-serif; font-size:18px; color:var(--ink-dim); letter-spacing:1px; text-transform:uppercase; margin-left:8px; font-weight:600; }
+  .unbeaten-card .ub-dates{ font-size:14px; color:var(--ink); margin-top:8px; }
+  .unbeaten-card .ub-club{ font-size:12px; color:var(--ink-dim); margin-top:2px; }
+  .unbeaten-card .ub-now{ min-width:210px; flex:1; max-width:320px; }
+  .unbeaten-card .ub-now-label{ display:flex; justify-content:space-between; font-family:'Barlow Condensed',sans-serif; font-size:13px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-dim); margin-bottom:6px; }
+  .unbeaten-card .ub-badge{ display:inline-block; margin-top:8px; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:#0A0D18; background:var(--gold); }
+
   .bar-block{ margin-top:18px; }
   .bar-block-label{
     font-family:'Barlow Condensed', sans-serif;
@@ -809,11 +824,6 @@
       <button class="btn ghost" id="loadSampleBtn" style="margin-left:10px;">Cargar datos de ejemplo</button>
     </div>
 
-    <div class="section-title">Progreso de objetivos</div>
-    <div class="card" id="objectiveProgressCard">
-      <div id="objectiveProgressEmpty" class="empty-note">Definí tus objetivos por competencia arriba, y cargá tu posición actual (en Perfil, más abajo) para ver acá qué tan cerca estás de cumplir cada uno.</div>
-      <div id="objectiveProgressList"></div>
-    </div>
 
     <div class="section-title">🏆 Vitrina de títulos</div>
     <div class="card" id="trophyCabinet">
@@ -833,8 +843,20 @@
       <div class="rep-item"><span class="num" id="wonValue">0</span><span class="lbl">Ganados</span></div>
       <div class="rep-item"><span class="num" id="drawnValue">0</span><span class="lbl">Empatados</span></div>
       <div class="rep-item"><span class="num" id="lostValue">0</span><span class="lbl">Perdidos</span></div>
-      <div class="rep-item"><span class="num" id="unbeatenValue">0</span><span class="lbl">Máximo invicto</span></div>
       <div class="rep-item"><span class="num" id="eventsValue">0</span><span class="lbl">Eventos registrados</span></div>
+    </div>
+    <div class="unbeaten-card" id="unbeatenCard">
+      <div>
+        <div class="ub-kicker">Récord histórico de invicto</div>
+        <div class="ub-big"><span id="unbeatenValue">0</span><small>partidos sin perder</small></div>
+        <div class="ub-dates" id="unbeatenDates">Todavía sin récord</div>
+        <div class="ub-club" id="unbeatenClub"></div>
+      </div>
+      <div class="ub-now">
+        <div class="ub-now-label"><span>Racha actual</span><span><b id="unbeatenCurrent">0</b> / <span id="unbeatenTarget">0</span></span></div>
+        <div class="bar-track"><div class="bar-fill gold" id="unbeatenFill" style="width:0%;"></div></div>
+        <span class="ub-badge" id="unbeatenBadge" style="display:none;">Récord en curso</span>
+      </div>
     </div>
 
     <div class="section-title">Estado del entrenador</div>
@@ -864,23 +886,6 @@
       <div class="bar-flavor" id="pressRelFlavor"></div>
     </div>
 
-    <div class="section-title">Posiciones actuales</div>
-    <div class="dateline" style="margin-bottom:10px;">Cargá tu posición en cada competencia que estés jugando (liga y copas). Impacta directo en lo que te pregunta la prensa después de cada partido.</div>
-    <div id="standingsPerComp"></div>
-    <div class="card" id="standingsManualCard" style="display:none;">
-      <div class="field-row">
-        <div>
-          <label>Competencia</label>
-          <input id="standingComp" type="text" placeholder="Ej: Premier League" autocomplete="off">
-        </div>
-        <div>
-          <label>Posición</label>
-          <input id="standingPos" type="text" placeholder="Ej: puntero, top5, semifinal, campeon (ver las opciones fijas de cada competencia más abajo)" autocomplete="off">
-        </div>
-      </div>
-      <button class="btn ghost" id="addStanding">Guardar posición</button>
-    </div>
-    <div class="match-list" id="standingsList"></div>
 
   </section>
 
@@ -1272,7 +1277,7 @@
 // una esquina fija de la pantalla (#buildBadge) además de en el header de adentro del juego
 // (#headerBuildLine), para poder confirmar sin dudas si dos dispositivos están corriendo el
 // mismo archivo. Para la próxima entrega, alcanza con cambiar este único string.
-const BUILD_ID = 'RULEBATCH-26';
+const BUILD_ID = 'RULEBATCH-27';
 document.getElementById('buildBadge').textContent = BUILD_ID;
 const headerBuildLineEl = document.getElementById('headerBuildLine');
 if(headerBuildLineEl) headerBuildLineEl.textContent = `build ${BUILD_ID}`;
@@ -1432,12 +1437,8 @@ const CUP_COMPETITIONS = new Set(['FA Cup','EFL Cup','Copa del Rey','Coppa Itali
 const ALWAYS_AVAILABLE_COMPETITIONS = ['Recopa Internacional'];
 const FRIENDLY_COMPETITIONS = new Set(['Amistoso Internacional']);
 
-// Pedido del usuario: "que todo salga seccionado... porque si yo escribo que voy primero no sé
-// si la web me toma como que estoy bien". Antes "Posiciones actuales" era texto libre, y
-// classifyStanding/objectiveProgress trataban de adivinarlo con expresiones regulares -- lo que
-// el usuario escribiera tenía que "calzar" con un patrón esperado o la prensa/el semáforo de
-// objetivos no lo entendían. Ahora son opciones fijas (un <select>), una lista para ligas (por
-// posición en la tabla) y otra para copas (por fase), así SIEMPRE se puede clasificar bien.
+// Opciones fijas de fase/posición. La sección "posiciones en curso" fue eliminada; estas listas
+// quedan SOLO para el cierre de temporada (fase alcanzada en copas, texto legible de resultados).
 const LEAGUE_STANDING_BUCKETS = [
   { value:'puntero',    label:'Puntero / 1°',                 rank:0, level:'excelente' },
   { value:'top5',        label:'Entre los puestos 2 y 5',       rank:2, level:'buena' },
@@ -1456,20 +1457,8 @@ const CUP_STANDING_BUCKETS = [
   { value:'campeon',     label:'Campeón',                       rank:0, level:'excelente' },
   { value:'eliminado',   label:'Eliminado',                     rank:6, level:'mala' },
 ];
-const STANDING_BUCKETS = { liga: LEAGUE_STANDING_BUCKETS, copa: CUP_STANDING_BUCKETS, amistoso: LEAGUE_STANDING_BUCKETS };
-// Mapa combinado value -> info, para clasificar sin necesidad de saber si es liga o copa (los
-// valores de las dos listas no se pisan entre sí).
 const STANDING_BUCKET_INFO = {};
 LEAGUE_STANDING_BUCKETS.concat(CUP_STANDING_BUCKETS).forEach(b => { STANDING_BUCKET_INFO[b.value] = b; });
-// Para partidas viejas que ya tenían texto libre guardado en state.standings: se muestra tal
-// cual (no se pierde lo que el usuario ya había cargado), pero no se puede clasificar hasta que
-// se vuelva a guardar con el selector nuevo -- se avisa en la propia pantalla.
-function standingLabel(posValue){
-  if(!posValue) return '—';
-  const info = STANDING_BUCKET_INFO[posValue];
-  return info ? info.label : posValue;
-}
-
 // Pedido del usuario: "en calendario de partidos estaría bueno que ya estén las fechas
 // determinadas como en un cuadro calendario... en vez de escribir el día a mano". Los campos de
 // fecha pasaron a ser <input type="date">, que guardan "AAAA-MM-DD". Esta función lo muestra
@@ -1700,6 +1689,10 @@ const state = {
   // solo de ahí -- si no, una racha vieja que ya salió del recorte se "olvidaría". Se actualiza
   // en el momento, cada vez que se juega un partido, y persiste aunque el recorte avance.
   maxUnbeatenStreak: 0,
+  // Récord histórico de invicto (nunca baja): { count, from, to, club } y racha en curso
+  // { count, from, to }. Ver updateUnbeatenRecord.
+  unbeatenRecord: { count:0, from:'', to:'', club:'' },
+  currentUnbeaten: { count:0, from:'', to:'' },
   pendingFutureEvents: [],
   _suppressExtremeChecks: false,
   reputation: 50,
@@ -1716,7 +1709,6 @@ const state = {
   season: { year:'', objective:'' },
   trophies: [], // { season, objective, met, trophy, position }
   careerHistory: [], // { club, year, exitStats:{...}, note }
-  standings: [] // { comp, pos }
 };
 
 const PLAYER_TIER_LABELS = { promesa:'Promesa', habitual:'Habitual', importante:'Importante', figura:'Figura', idolo:'Ídolo' };
@@ -1869,7 +1861,7 @@ function repairDuplicateIds(){
 
 function renderGameDate(){
   const el = document.getElementById('dateline');
-  const lastPlayed = state.timeline && state.timeline.length ? state.timeline[0] : null;
+  const lastPlayed = state.timeline && state.timeline.length ? state.timeline[state.timeline.length - 1] : null;
   const nextPending = state.matches.find(m=>m.status==='pendiente');
   if(lastPlayed){
     el.textContent = `Temporada ${state.profile.year || ''} · Última fecha jugada: ${formatMatchDate(lastPlayed.date) || '—'}${nextPending ? ' · Próxima: '+(formatMatchDate(nextPending.date)||'—') : ''}`;
@@ -2209,7 +2201,7 @@ function renderProfile(){
   // Combina el cálculo sobre la línea de tiempo visible (que ahora se recorta a los últimos 30
   // partidos) con el mejor histórico guardado aparte (state.maxUnbeatenStreak), para que una
   // racha vieja que ya salió del recorte no se "pierda" del máximo mostrado.
-  document.getElementById('unbeatenValue').textContent = Math.max(computeMaxUnbeatenStreak(), state.maxUnbeatenStreak || 0);
+  renderUnbeatenCard();
   document.getElementById('eventsValue').textContent = state.eventHistory.length;
 
   document.getElementById('personalityValue').textContent = state.stats.personality;
@@ -2244,9 +2236,6 @@ function renderProfile(){
   renderTrophyCabinet();
   renderCareer();
   renderNextMatchBox();
-  renderStandings();
-  renderStandingsPerComp();
-  renderObjectiveProgress();
   renderUnavailable();
   renderAlerts();
   renderGameDate();
@@ -2315,132 +2304,6 @@ function renderNextMatchBox(){
 function switchTab(tabId){
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab===tabId));
   document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-'+tabId));
-}
-
-document.getElementById('addStanding').addEventListener('click', () => {
-  const comp = document.getElementById('standingComp').value.trim();
-  const pos = document.getElementById('standingPos').value.trim();
-  if(!comp) return;
-  state.standings = state.standings.filter(s => s.comp !== comp);
-  state.standings.push({ comp, pos });
-  document.getElementById('standingComp').value = '';
-  document.getElementById('standingPos').value = '';
-  renderStandings();
-});
-
-function renderStandingsPerComp(){
-  const box = document.getElementById('standingsPerComp');
-  const manualCard = document.getElementById('standingsManualCard');
-  const comps = state.profile.competitions || [];
-  if(!comps.length){
-    box.innerHTML = '';
-    manualCard.style.display = 'block';
-    return;
-  }
-  manualCard.style.display = 'none';
-  box.innerHTML = comps.map(c => {
-    const existing = state.standings.find(s => s.comp === c);
-    const val = existing ? existing.pos : '';
-    const buckets = STANDING_BUCKETS[competitionKind(c)] || LEAGUE_STANDING_BUCKETS;
-    // Si lo que había guardado es texto libre de antes de este cambio (no calza con ningún
-    // valor fijo de la lista), se deja la primera opción sin elegir en vez de inventar una
-    // posición -- mejor pedir que se vuelva a cargar una vez que quedarse con un dato adivinado.
-    const matches = buckets.some(b => b.value === val);
-    return `
-    <div class="field-row" style="margin-bottom:10px; align-items:flex-end;">
-      <div>
-        <label>${c}</label>
-        <select class="standing-comp-input" data-comp="${c}">
-          <option value="" ${matches ? '' : 'selected'} disabled>— Elegí una opción —</option>
-          ${buckets.map(b => `<option value="${b.value}" ${val===b.value?'selected':''}>${b.label}</option>`).join('')}
-        </select>
-      </div>
-      <div>
-        <button class="btn ghost" type="button" onclick="saveStandingFor('${c.replace(/'/g,"\\'")}')" style="width:100%;">Guardar</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-function saveStandingFor(comp){
-  const select = document.querySelector(`.standing-comp-input[data-comp="${CSS.escape(comp)}"]`);
-  if(!select) return;
-  const pos = select.value;
-  state.standings = state.standings.filter(s => s.comp !== comp);
-  if(pos) state.standings.push({ comp, pos });
-  renderStandings();
-  renderObjectiveProgress();
-  persist();
-}
-
-// Clasifica la posición/fase cargada (ahora siempre un valor fijo del selector, ver
-// STANDING_BUCKET_INFO) como buena o mala, para que la prensa reaccione acorde. Si es texto
-// libre de una partida vieja que todavía no se volvió a guardar con el selector nuevo, no se
-// puede clasificar (devuelve null, como si no hubiera nada cargado).
-function classifyStanding(posValue){
-  const info = STANDING_BUCKET_INFO[posValue];
-  return info ? info.level : null;
-}
-
-// Estima qué tan cerca está un objetivo de cumplirse, cruzando el objetivo elegido con la
-// posición/fase cargada para esa competencia (ahora un bucket fijo con un "rank" 0=mejor
-// posible a 7=peor posible, en vez de adivinar texto libre con expresiones regulares).
-function objectiveProgress(objective, posValue){
-  if(!posValue || !objective || objective === 'Sin objetivo definido') return null;
-  const info = STANDING_BUCKET_INFO[posValue];
-  if(!info || info.rank === null) return null;
-  const rank = info.rank;
-
-  if(objective === 'Ganar el título') return rank === 0 ? 'verde' : (rank <= 2 ? 'amarillo' : 'rojo');
-  if(objective === 'Clasificar a competencia internacional') return rank <= 2 ? 'verde' : (rank <= 4 ? 'amarillo' : 'rojo');
-  if(objective === 'Llegar a semifinales') return rank <= 2 ? 'verde' : (rank === 3 ? 'amarillo' : 'rojo');
-  if(objective === 'Llegar a la final') return rank <= 1 ? 'verde' : (rank <= 2 ? 'amarillo' : 'rojo');
-  if(objective === 'Llegar a cuartos de final') return rank <= 3 ? 'verde' : (rank === 4 ? 'amarillo' : 'rojo');
-  if(objective === 'Llegar a octavos de final') return rank <= 4 ? 'verde' : (rank === 5 ? 'amarillo' : 'rojo');
-  if(objective === 'Superar la fase de grupos') return rank <= 4 ? 'verde' : (rank === 5 ? 'amarillo' : 'rojo');
-  if(objective === 'Top 10') return rank <= 4 ? 'verde' : (rank === 5 ? 'amarillo' : 'rojo');
-  if(objective === 'Mantener la categoría') return rank <= 5 ? 'verde' : (rank === 6 ? 'amarillo' : 'rojo');
-  return 'amarillo';
-}
-const PROGRESS_COLORS = { verde:'#3DDC84', amarillo:'#FFD166', rojo:'#FF5C6C' };
-function renderObjectiveProgress(){
-  const empty = document.getElementById('objectiveProgressEmpty');
-  const list = document.getElementById('objectiveProgressList');
-  const comps = state.profile.competitions || [];
-  if(!comps.length){
-    empty.style.display = 'block';
-    list.innerHTML = '';
-    return;
-  }
-  empty.style.display = 'none';
-  list.innerHTML = comps.map(c => {
-    const objective = (state.profile.competitionObjectives && state.profile.competitionObjectives[c]) || 'Sin objetivo definido';
-    const standing = state.standings.find(s => s.comp === c);
-    const level = standing ? objectiveProgress(objective, standing.pos) : null;
-    const color = level ? PROGRESS_COLORS[level] : 'var(--surface-border)';
-    const pct = level === 'verde' ? 90 : level === 'amarillo' ? 55 : level === 'rojo' ? 18 : 8;
-    return `
-    <div style="margin-bottom:14px;">
-      <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:4px;">
-        <span style="font-weight:700;">${c}</span>
-        <span class="dateline">${objective}${standing ? ' · ' + standingLabel(standing.pos) : ''}</span>
-      </div>
-      <div class="bar-track"><div class="bar-fill" style="width:${pct}%; background:${color};"></div></div>
-    </div>`;
-  }).join('');
-}
-
-function renderStandings(){
-  const list = document.getElementById('standingsList');
-  if(!state.standings || state.standings.length === 0){
-    list.innerHTML = '<div class="empty-note">Todavía no cargaste posiciones.</div>';
-    return;
-  }
-  list.innerHTML = state.standings.map(s => `
-    <div class="match-row" style="cursor:default;">
-      <div class="left"><div class="rival">${s.comp}</div></div>
-      <div class="status-tag">${standingLabel(s.pos)}</div>
-    </div>
-  `).join('');
 }
 
 function estimatedReturnMatch(matchesOut){
@@ -2895,7 +2758,23 @@ document.getElementById('removeConfirmBtn').addEventListener('click', () => {
 
 // ------------------ CALENDARIO ------------------
 // ------------------ FORMULARIO GUIADO DE CALENDARIO ------------------
+// Pedido del usuario: al cargar un partido, el calendario debe abrir en la fecha del ÚLTIMO
+// partido cargado (no en "hoy"), para no tener que navegar hasta el año/fecha en curso del juego.
+// Un <input type="date"> abre el selector en su valor actual, así que se lo pre-carga.
+function lastMatchDate(excludeId){
+  let best = '';
+  (state.matches || []).forEach(m => {
+    if(excludeId !== undefined && m.id === excludeId) return;
+    if(/^\d{4}-\d{2}-\d{2}$/.test(m.date || '') && m.date > best) best = m.date;
+  });
+  return best;
+}
+function prefillMatchDate(){
+  const el = document.getElementById('mDate');
+  if(el && !el.value) el.value = lastMatchDate();
+}
 function populateMatchCompOptions(){
+  prefillMatchDate();
   const compSelect = document.getElementById('mComp');
   const compText = document.getElementById('mCompText');
   const notPlayed = state.profile.competitionNotPlayed || {};
@@ -2930,7 +2809,8 @@ function updateMatchFormForComp(){
   const comp = compSelect.style.display !== 'none' ? compSelect.value : compText.value.trim();
   const rivalSelect = document.getElementById('mRivalSelect');
   const rivalInput = document.getElementById('mRival');
-  const pool = comp ? rivalPoolFor(comp) : [];
+  // Pedido del usuario: rivales en orden alfabético para encontrarlos más rápido.
+  const pool = (comp ? rivalPoolFor(comp) : []).slice().sort((a,b) => a.localeCompare(b, 'es', { sensitivity:'base' }));
 
   if(pool.length){
     rivalSelect.style.display = 'block';
@@ -3122,7 +3002,7 @@ function openEditMatch(id){
   editingMatchId = id;
   document.getElementById('editMatchComp').value = m.comp || '';
   document.getElementById('editMatchRival').value = m.rival || '';
-  document.getElementById('editMatchDate').value = m.date || '';
+  document.getElementById('editMatchDate').value = m.date || lastMatchDate(id);
   const kind = m.comp ? competitionKind(m.comp) : 'liga';
   const importanceSelect = document.getElementById('editMatchImportance');
   importanceSelect.innerHTML = IMPORTANCE_OPTIONS[kind].map(o => `<option value="${o.value}" ${o.value===m.importance?'selected':''}>${o.label}</option>`).join('');
@@ -3665,6 +3545,87 @@ function computeMaxUnbeatenStreak(){
   return max;
 }
 
+// ---- Récord histórico de invicto ----
+// Pedido del usuario: el invicto máximo "solo puede cambiar a mejor", con fecha, como histórico.
+// Se lleva una racha en curso (count/from/to) y un récord que SOLO se pisa cuando la racha en
+// curso lo SUPERA. Nunca se recalcula "hacia abajo" desde la línea de tiempo (que está recortada).
+function normalizeUnbeaten(){
+  if(!state.unbeatenRecord || typeof state.unbeatenRecord !== 'object') state.unbeatenRecord = { count:0, from:'', to:'', club:'' };
+  const seedCurrent = !state.currentUnbeaten || typeof state.currentUnbeaten !== 'object';
+  if(seedCurrent) state.currentUnbeaten = { count:0, from:'', to:'' };
+  // Migración / blindaje: lo viejo (maxUnbeatenStreak) y lo visible en la línea de tiempo nunca
+  // pueden quedar por encima del récord guardado.
+  const legacy = Math.max(state.maxUnbeatenStreak || 0, computeMaxUnbeatenStreak());
+  if(legacy > (state.unbeatenRecord.count || 0)){
+    state.unbeatenRecord = { count: legacy, from:'', to:'', club: state.profile && state.profile.club || '' };
+  }
+  // Siembra la racha en curso desde la línea de tiempo si todavía no existía.
+  if(seedCurrent && state.timeline && state.timeline.length){
+    let n = 0, from = '', to = '';
+    for(let i = state.timeline.length - 1; i >= 0; i--){
+      if(state.timeline[i].outcome === 'derrota') break;
+      n++; from = state.timeline[i].date || ''; if(!to) to = state.timeline[i].date || '';
+    }
+    state.currentUnbeaten = { count:n, from, to };
+  }
+  state.maxUnbeatenStreak = Math.max(state.maxUnbeatenStreak || 0, state.unbeatenRecord.count || 0);
+}
+function updateUnbeatenRecord(date, outcome){
+  normalizeUnbeaten();
+  const cur = state.currentUnbeaten;
+  if(outcome === 'derrota'){
+    state.currentUnbeaten = { count:0, from:'', to:'' };
+  } else {
+    if(!cur.count) cur.from = date || '';
+    cur.count += 1;
+    cur.to = date || cur.to || '';
+    if(cur.count > (state.unbeatenRecord.count || 0)){
+      state.unbeatenRecord = { count: cur.count, from: cur.from, to: cur.to, club: state.profile.club || '' };
+    } else if(cur.count === state.unbeatenRecord.count && state.unbeatenRecord.from === cur.from){
+      state.unbeatenRecord.to = cur.to; // misma racha creciendo
+    }
+  }
+  state.maxUnbeatenStreak = Math.max(state.maxUnbeatenStreak || 0, state.unbeatenRecord.count);
+  backupUnbeatenRecord();
+}
+// Copia de seguridad aparte (solo de este navegador): si alguna vez se carga una partida más
+// vieja (otra pestaña/dispositivo desactualizado), el récord NO retrocede.
+function unbeatenBackupKey(){ return 'gm_unbeaten_' + (currentUser || ''); }
+function backupUnbeatenRecord(){
+  try{ if(currentUser) localStorage.setItem(unbeatenBackupKey(), JSON.stringify(state.unbeatenRecord)); }catch(e){}
+}
+function restoreUnbeatenBackup(){
+  try{
+    const raw = currentUser && localStorage.getItem(unbeatenBackupKey());
+    if(!raw) return;
+    const b = JSON.parse(raw);
+    if(b && b.count > ((state.unbeatenRecord && state.unbeatenRecord.count) || 0)) state.unbeatenRecord = b;
+  }catch(e){}
+}
+function formatLongDate(dateStr){
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || '');
+  if(!m) return dateStr || '';
+  return `${parseInt(m[3],10)} ${SHORT_MONTHS_ES[parseInt(m[2],10)-1] || ''} ${m[1]}`;
+}
+function renderUnbeatenCard(){
+  normalizeUnbeaten();
+  const rec = state.unbeatenRecord, cur = state.currentUnbeaten;
+  document.getElementById('unbeatenValue').textContent = rec.count || 0;
+  let dates = 'Todavía sin récord';
+  if(rec.count){
+    dates = (rec.from || rec.to)
+      ? (rec.from === rec.to || !rec.to ? `Logrado el ${formatLongDate(rec.from || rec.to)}` : `Del ${formatLongDate(rec.from)} al ${formatLongDate(rec.to)}`)
+      : 'Fecha no registrada (racha anterior a esta función)';
+  }
+  document.getElementById('unbeatenDates').textContent = dates;
+  document.getElementById('unbeatenClub').textContent = rec.count && rec.club ? `Con ${rec.club}` : '';
+  document.getElementById('unbeatenCurrent').textContent = cur.count || 0;
+  document.getElementById('unbeatenTarget').textContent = rec.count || 0;
+  const pct = rec.count ? Math.min(100, Math.round((cur.count / rec.count) * 100)) : 0;
+  document.getElementById('unbeatenFill').style.width = pct + '%';
+  document.getElementById('unbeatenBadge').style.display = (rec.count > 0 && cur.count >= rec.count) ? 'inline-block' : 'none';
+}
+
 function addTimelineEntry(m){
   const club = state.profile.club || 'el club';
   const r = m.result;
@@ -3675,6 +3636,9 @@ function addTimelineEntry(m){
   const outcomeKind = computeMatchOutcome(r.home, r.away, r.penaltyWinner || null).outcome;
   const outcome = outcomeKind === 'win' ? 'victoria' : (outcomeKind === 'loss' ? 'derrota' : 'empate');
   state.timeline = state.timeline || [];
+  // Racha en curso y récord histórico: se actualiza ANTES de agregar este partido a la línea de
+  // tiempo (así la siembra de cuentas viejas, que lee la línea de tiempo, no lo cuenta dos veces).
+  updateUnbeatenRecord(m.date, outcome);
   state.timeline.push({
     matchId: m.id,
     rival: m.rival,
@@ -3687,14 +3651,6 @@ function addTimelineEntry(m){
     eventTag: m.event ? m.event.tag : null,
     eventTitle: m.event ? evText(m.event.title, m.event.playerName) : null
   });
-  // Actualiza la mejor racha invicta ANTES de recortar la línea de tiempo (ver comentario en
-  // state.maxUnbeatenStreak), calculando la racha actual recorriendo desde el final hacia atrás.
-  let currentStreak = 0;
-  for(let i = state.timeline.length - 1; i >= 0; i--){
-    if(state.timeline[i].outcome === 'derrota') break;
-    currentStreak++;
-  }
-  state.maxUnbeatenStreak = Math.max(state.maxUnbeatenStreak || 0, currentStreak);
   // Pedido del usuario: "la línea de tiempo del club... pueden irse borrando de a poco porque
   // sino es mucha información... que salgan los últimos 30". Se recorta ACÁ, al agregar (en vez
   // de en el render), porque es el único lugar por el que pasa siempre un partido nuevo.
@@ -4039,58 +3995,6 @@ function fanPatienceQuoteOptions(){
   return ['PICANTE','TRANQUILO','EVASIVO'].map(tag => ({ tag, label: pick(FAN_PATIENCE_ANSWERS[tag])(), ...FAN_PATIENCE_DELTAS[tag] }));
 }
 
-// Preguntas sobre la posición cargada en la tabla: castigan si vas mal, premian si vas bien.
-// Así se invita a cargar siempre la posición, en la liga y en cada copa que se juegue.
-const STANDING_BAD_QUESTIONS = [
-  (comp,pos)=>`Con ${state.profile.club || 'el equipo'} en ${pos} de ${comp}, ¿qué explicación le da a la hinchada?`,
-  (comp,pos)=>`La posición actual en ${comp} (${pos}) preocupa. ¿Cómo piensa revertirlo?`,
-  (comp,pos)=>`¿Se siente responsable de que el equipo esté en ${pos} en ${comp}?`,
-  (comp,pos)=>`Estar en ${pos} de ${comp} no es lo esperado. ¿Su continuidad está en duda?`,
-];
-const STANDING_BAD_ANSWERS = {
-  PICANTE: [
-    ()=>`"La tabla no define nada todavía, y no le voy a dar el gusto a nadie de bajar los brazos."`,
-    ()=>`"El que quiera mi cabeza por una posición en este momento del torneo, que se aguante."`,
-  ],
-  TRANQUILO: [
-    ()=>`"Sé que la posición no es la esperada, pero confío en el proceso y en revertirlo con trabajo."`,
-    ()=>`"No es el lugar que queremos, lo sabemos, y vamos a trabajar para salir de ahí."`,
-  ],
-  EVASIVO: [
-    ()=>`"Prefiero no hablar de números, hay mucho torneo por delante todavía."`,
-    ()=>`"Eso lo van a definir los partidos que faltan, no lo que digamos hoy acá."`,
-  ],
-};
-const STANDING_BAD_DELTAS = { PICANTE:{dPersonality:+7,dClub:-7,dFan:-3,dPress:-5,dMood:0}, TRANQUILO:{dPersonality:-4,dClub:+5,dFan:+2,dPress:+5,dMood:0}, EVASIVO:{dPersonality:-2,dClub:+1,dFan:-1,dPress:-2,dMood:0} };
-function standingBadQuoteOptions(){
-  return ['PICANTE','TRANQUILO','EVASIVO'].map(tag => ({ tag, label: pick(STANDING_BAD_ANSWERS[tag])(), ...STANDING_BAD_DELTAS[tag] }));
-}
-
-const STANDING_GOOD_QUESTIONS = [
-  (comp,pos)=>`${state.profile.club || 'El equipo'} está en ${pos} de ${comp}. ¿Se anima a soñar con algo más?`,
-  (comp,pos)=>`La ubicación en ${comp} (${pos}) es muy buena. ¿A qué lo atribuye?`,
-  (comp,pos)=>`Con este presente en ${comp} (${pos}), ¿cuál es el techo del equipo?`,
-  (comp,pos)=>`Estar en ${pos} de ${comp} ilusiona a la gente. ¿Comparte esa ilusión?`,
-];
-const STANDING_GOOD_ANSWERS = {
-  PICANTE: [
-    ()=>`"Vinimos a pelear todo, y esta posición lo demuestra. No le tenemos miedo a nadie."`,
-    ()=>`"Ya que estamos ahí arriba, vamos a ir por todo. Sin techo."`,
-  ],
-  TRANQUILO: [
-    ()=>`"Estamos contentos, pero con los pies sobre la tierra, partido a partido."`,
-    ()=>`"Es fruto del trabajo del día a día, pero no nos relajamos."`,
-  ],
-  EVASIVO: [
-    ()=>`"Prefiero no hablar de posiciones, seguimos enfocados en el próximo rival."`,
-    ()=>`"Las tablas se miran al final, ahora solo pienso en el próximo partido."`,
-  ],
-};
-const STANDING_GOOD_DELTAS = { PICANTE:{dPersonality:+7,dClub:+4,dFan:+7,dPress:-3,dMood:0}, TRANQUILO:{dPersonality:-3,dClub:+6,dFan:+4,dPress:+6,dMood:0}, EVASIVO:{dPersonality:-1,dClub:+2,dFan:0,dPress:-1,dMood:0} };
-function standingGoodQuoteOptions(){
-  return ['PICANTE','TRANQUILO','EVASIVO'].map(tag => ({ tag, label: pick(STANDING_GOOD_ANSWERS[tag])(), ...STANDING_GOOD_DELTAS[tag] }));
-}
-
 const SEASON_GOAL_QUESTIONS = [
   (g)=>`¿Este triunfo cambia algo respecto al objetivo de la temporada: ${g}?`,
   (g)=>`Con este nivel, ¿se anima a pedir más de lo planteado como objetivo (${g})?`,
@@ -4426,21 +4330,6 @@ function showPressConference(playedMatch){
   if(state.players.length && Math.random() < 0.3){
     const randomPlayer = state.players[Math.floor(Math.random()*state.players.length)];
     pool.push({ text: pick(TRANSFER_RUMOR_QUESTIONS)(randomPlayer.name), playerId:null, options: transferRumorQuoteOptions(randomPlayer.name) });
-  }
-
-  // Si hay posiciones cargadas (liga o copas), la prensa pregunta por la más floja si vas mal,
-  // o te felicita si vas bien -así se invita a cargar siempre la posición actual.
-  if(state.standings && state.standings.length){
-    const classified = state.standings.map(s => ({ ...s, level: classifyStanding(s.pos) })).filter(s => s.level);
-    const bad = classified.filter(s => s.level === 'mala');
-    const good = classified.filter(s => s.level === 'excelente' || s.level === 'buena');
-    const chosenBad = bad.length ? bad[Math.floor(Math.random()*bad.length)] : null;
-    const chosenGood = good.length ? good[Math.floor(Math.random()*good.length)] : null;
-    if(chosenBad && (!chosenGood || Math.random() < 0.6)){
-      pool.push({ text: pick(STANDING_BAD_QUESTIONS)(chosenBad.comp, standingLabel(chosenBad.pos)), playerId:null, options: standingBadQuoteOptions() });
-    } else if(chosenGood){
-      pool.push({ text: pick(STANDING_GOOD_QUESTIONS)(chosenGood.comp, standingLabel(chosenGood.pos)), playerId:null, options: standingGoodQuoteOptions() });
-    }
   }
 
   // Se muestran como máximo 4 preguntas por conferencia, elegidas al azar entre las elegibles,
@@ -6966,9 +6855,9 @@ document.getElementById('changeClubBtn').addEventListener('click', () => {
   // para que arranque en blanco con cada nuevo ciclo. El archivo de informes SÍ se conserva:
   // ya tiene la entrada de "Salida de <club viejo>" que sirve de marca de transición.
   state.timeline = [];
-  // El máximo invicto es "de este paso por el club" (igual que stintStats), así que se reinicia
-  // junto con la línea de tiempo al cambiar de club.
-  state.maxUnbeatenStreak = 0;
+  // El récord histórico de invicto NO se reinicia (es de toda la carrera, con el club anotado);
+  // solo la racha en curso arranca de cero con el nuevo club.
+  state.currentUnbeaten = { count:0, from:'', to:'' };
   state.playerMood = {};
   state.playerAvailability = {};
   // Pedido del usuario: "revisa bien si hacemos cambio de club que no se buguee nada y que
@@ -6983,7 +6872,6 @@ document.getElementById('changeClubBtn').addEventListener('click', () => {
   state.playerLeaveRisk = {};
   state.crisisFired = false;
   state.season = { year:'', objective:'' };
-  state.standings = [];
   state.consecutiveLosses = 0;
   state.stintStats = { played:0, won:0, drawn:0, lost:0, seasons:0, titles:0 };
   state.coachStability = { cooldown:0, threatWarned:false, pressureFlags:{}, warnFlags:{} };
@@ -7354,7 +7242,9 @@ document.getElementById('importSaveInput').addEventListener('change', (e) => {
     if(!state.pendingFutureEvents) state.pendingFutureEvents = [];
     repairDuplicateIds();
     migrateLegacyImportance(state.matches);
-    if(state.maxUnbeatenStreak === undefined) state.maxUnbeatenStreak = computeMaxUnbeatenStreak();
+    delete state.standings;
+    restoreUnbeatenBackup();
+    normalizeUnbeaten();
     document.getElementById('dtName').value = state.profile.name || '';
     document.getElementById('dtClub').value = state.profile.club || '';
     document.getElementById('dtYear').value = state.profile.year || '';
@@ -7428,7 +7318,9 @@ function startApp(user, pin, loadedData){
     // a los últimos 30 partidos) todavía no existe este campo. Se lo siembra con lo que ya se ve
     // en la línea de tiempo ANTES de que el próximo partido la recorte, para no perder de golpe
     // el máximo invicto que ya tenía acumulado.
-    if(state.maxUnbeatenStreak === undefined) state.maxUnbeatenStreak = computeMaxUnbeatenStreak();
+    delete state.standings;
+    restoreUnbeatenBackup();
+    normalizeUnbeaten();
     if(state.profile.league && LEAGUE_DB[state.profile.league]){
       leagueSelect.value = state.profile.league;
       updateClubOptions();
