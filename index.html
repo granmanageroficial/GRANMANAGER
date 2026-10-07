@@ -261,10 +261,6 @@
 
   .ext-card{ margin-top:18px; padding:18px 20px; border-radius:16px; border:1px solid var(--surface-border); background:var(--surface); }
   .ext-title{ font-family:'Barlow Condensed',sans-serif; font-size:13px; letter-spacing:2px; text-transform:uppercase; color:var(--pitch); font-weight:700; margin-bottom:10px; }
-  .ctl{ position:relative; margin:6px 0 4px 14px; padding-left:22px; border-left:2px solid var(--line); }
-  .ctl-item{ position:relative; padding:0 0 18px 0; }
-  .ctl-dot{ position:absolute; left:-43px; top:-2px; width:32px; height:32px; border-radius:50%; background:var(--paper-dark); border:1px solid var(--surface-border); display:flex; align-items:center; justify-content:center; font-size:16px; }
-  .ctl-title{ font-weight:700; font-size:15px; }
   .unbeaten-card{
     margin-top:18px; padding:18px 20px; border-radius:16px;
     border:1px solid rgba(31,209,179,0.45);
@@ -630,10 +626,17 @@
 </div>
 
 <div id="classicRivalModal" class="modal-overlay" style="display:none;">
-  <div class="login-card event-alert-card">
+  <div class="login-card event-alert-card" style="max-height:90vh; overflow-y:auto;">
     <div class="checklist-title" style="margin-bottom:4px;">Clásicos rivales de <span id="classicClubName">—</span></div>
-    <div class="dateline" style="margin-bottom:14px;">Elegí hasta 3 clásicos rivales. Sus partidos se marcan como "Clásico" y se lleva el historial cara a cara contra cada uno.</div>
-    <label>Rival</label>
+    <div class="dateline" style="margin-bottom:14px;">Elegí <b>1 Superclásico</b> y hasta <b>4 clásicos</b> más. Sus partidos se marcan como "Clásico" y se lleva el historial cara a cara contra cada uno.</div>
+    <label>👑 Superclásico (1)</label>
+    <div style="display:flex; gap:8px;">
+      <select id="superClassicSelect" style="flex:1;"></select>
+      <input id="superClassicText" type="text" placeholder="Escribí el nombre del rival" autocomplete="off" style="flex:1; display:none;">
+      <button type="button" class="btn ghost small" id="superClassicSetBtn" style="white-space:nowrap;">Elegir</button>
+    </div>
+    <div id="superClassicChip" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;"></div>
+    <label style="margin-top:16px; display:block;">🔥 Clásicos (hasta 4)</label>
     <div style="display:flex; gap:8px;">
       <select id="classicRivalSelect" style="flex:1;"></select>
       <input id="classicRivalText" type="text" placeholder="Escribí el nombre del rival" autocomplete="off" style="flex:1; display:none;">
@@ -996,9 +999,6 @@
 
   <!-- CARRERA / CAMBIO DE CLUB -->
   <section class="panel" id="panel-carrera">
-    <div class="section-title">Línea de tiempo de la carrera</div>
-    <div id="careerTimeline" class="ctl"></div>
-
     <div class="section-title">Historial de clubes</div>
     <div class="match-list" id="careerList"></div>
     <div id="careerEmpty" class="empty-note">Todavía no hay clubes anteriores registrados.</div>
@@ -1861,6 +1861,8 @@ const MAX_LEADERS = 3;
 let currentSummaryShown = null;
 let pendingSeasonSummary = null;
 let classicDraft = [];
+let superDraft = '';
+const MAX_CLASSICS = 4;
 
 // Bug real: jugadores y partidos comparten el mismo contador de IDs (nextId). Si por algún
 // motivo ese contador queda desincronizado respecto de los IDs que ya están en uso (por ejemplo,
@@ -2139,20 +2141,9 @@ document.getElementById('saveProfile').addEventListener('click', () => {
   renderProfile();
   renderOnboardingChecklist();
   maybeCompleteOnboarding();
-  // RULEBATCH-29: registra la llegada al club en la carrera y pregunta por los clásicos rivales.
+  // RULEBATCH-29: pregunta por los clásicos rivales al asumir en un club.
   if(state.profile.club){
     ensureCareerState();
-    if(state.profile.loggedClub !== state.profile.club){
-      const lastAsun = state.careerLog.slice().reverse().find(e => e.type === 'asuncion');
-      if(lastAsun && state.profile.loggedClub && lastAsun.club === state.profile.loggedClub){
-        lastAsun.club = state.profile.club;
-        lastAsun.title = `Asumís en ${state.profile.club}`;
-      } else {
-        logCareer({ type:'asuncion', club: state.profile.club, title:`Asumís en ${state.profile.club}`, sub:`Temporada ${state.profile.year || '—'}`, sortKey: (yearOfLabel(state.profile.year) || 0) * 10000 + 101 });
-      }
-      state.profile.loggedClub = state.profile.club;
-    }
-    renderCareerTimeline();
     maybePromptClassicRival();
   }
 });
@@ -2481,7 +2472,6 @@ function coachCredit(){
 function fireCoach(reason){
   const club = state.profile.club || 'el club';
   state.firedFlag = true;
-  logCareer({ type:'despido', club, title:`Despedido de ${club}`, sub:`Temporada ${state.profile.year || '—'}`, sortKey: dateSortKey(lastPlayedDate()) || ((yearOfLabel(state.profile.year) || 0) * 10000 + 9000) });
   let title, body;
   if(reason === 'racha10'){
     title = 'FIN DEL CICLO';
@@ -3128,6 +3118,27 @@ function renderScorerPicker(){
   const available = state.players.slice();
   picker.innerHTML = '<option value="">Elegí un jugador…</option>' + available.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
 }
+function ourGoalsInForm(){
+  return parseInt(document.getElementById('scoreHome').value) || 0;
+}
+function scorerLimitNote(){
+  const n = currentScorers.length, max = ourGoalsInForm();
+  return `Goles asignados: <b>${n} de ${max}</b>${n > max ? ' — ¡te pasaste del marcador!' : (n === max && max > 0 ? ' — completo' : '')}. Usá + y − para dobletes o tripletes.`;
+}
+function canAddScorerGoal(){
+  const max = ourGoalsInForm();
+  if(max <= 0){ alert('Primero poné el resultado: tu equipo todavía no tiene goles en el marcador.'); return false; }
+  if(currentScorers.length >= max){ alert(`Ya asignaste los ${max} gol${max === 1 ? '' : 'es'} de tu equipo. Para cambiar, sacá uno con − o corregí el marcador.`); return false; }
+  return true;
+}
+function scorerGroups(){
+  const groups = [];
+  currentScorers.forEach(name => {
+    const g = groups.find(x => x.name === name);
+    if(g) g.n += 1; else groups.push({ name, n:1 });
+  });
+  return groups;
+}
 function renderScorerChips(){
   const chips = document.getElementById('scorersChips');
   const empty = document.getElementById('scorersEmpty');
@@ -3136,19 +3147,29 @@ function renderScorerChips(){
     empty.style.display = 'block';
   } else {
     empty.style.display = 'none';
-    const groups = [];
-    currentScorers.forEach((name, idx) => {
-      const g = groups.find(x => x.name === name);
-      if(g){ g.n += 1; g.last = idx; } else groups.push({ name, n:1, last: idx });
-    });
-    chips.innerHTML = groups.map(g => `
-      <span class="importance-tag" style="display:inline-flex; align-items:center; gap:6px;">
-        ${escHtml(g.name)}${g.n > 1 ? ' ×' + g.n : ''}
-        <button type="button" onclick="removeScorer(${g.last})" style="background:none; border:none; color:inherit; cursor:pointer; font-weight:700; padding:0; font-size:13px;">✕</button>
+    const btn = 'background:rgba(255,255,255,0.08); border:none; color:inherit; cursor:pointer; font-weight:700; width:24px; height:24px; border-radius:50%; font-size:15px; line-height:1; padding:0;';
+    chips.innerHTML = scorerGroups().map((g, gi) => `
+      <span class="importance-tag" style="display:inline-flex; align-items:center; gap:8px; padding:4px 8px;">
+        ⚽ ${escHtml(g.name)} <b>×${g.n}</b>
+        <button type="button" aria-label="Quitar un gol" onclick="changeScorerGoals(${gi}, -1)" style="${btn}">−</button>
+        <button type="button" aria-label="Sumar un gol" onclick="changeScorerGoals(${gi}, 1)" style="${btn}">+</button>
       </span>
-    `).join('');
+    `).join('') + `<div class="dateline" id="scorerLimitNote" style="width:100%;">${scorerLimitNote()}</div>`;
   }
   renderScorerPicker();
+}
+// Suma (+1) o resta (-1) un gol a un jugador ya cargado, sin tener que volver a elegirlo.
+function changeScorerGoals(groupIdx, delta){
+  const g = scorerGroups()[groupIdx];
+  if(!g) return;
+  if(delta > 0){
+    if(!canAddScorerGoal()) return;
+    const last = currentScorers.lastIndexOf(g.name);
+    currentScorers.splice(last + 1, 0, g.name);
+  } else {
+    currentScorers.splice(currentScorers.lastIndexOf(g.name), 1);
+  }
+  renderScorerChips();
 }
 function removeScorer(idx){
   currentScorers.splice(idx, 1);
@@ -3158,8 +3179,14 @@ document.getElementById('addScorerBtn').addEventListener('click', () => {
   const picker = document.getElementById('scorerPicker');
   const name = picker.value;
   if(!name) return;
+  if(!canAddScorerGoal()) return;
   currentScorers.push(name);
   renderScorerChips();
+});
+// Si se cambia el marcador mientras hay goleadores cargados, se actualiza el contador.
+document.getElementById('scoreHome').addEventListener('input', () => {
+  const el = document.getElementById('scorerLimitNote');
+  if(el) el.innerHTML = scorerLimitNote();
 });
 
 function loadMatchIntoZone(id){
@@ -3334,6 +3361,11 @@ document.getElementById('scoreAway').addEventListener('input', updateTieAggregat
 document.getElementById('saveResult').addEventListener('click', () => {
   const m = state.matches.find(x=>x.id===activeMatchId);
   if(!m) return;
+  // Los goles asignados a jugadores no pueden superar los goles de tu equipo en el marcador.
+  if(currentScorers.length > ourGoalsInForm()){
+    alert(`Cargaste ${currentScorers.length} gol${currentScorers.length === 1 ? '' : 'es'} a jugadores, pero tu equipo hizo ${ourGoalsInForm()} en el marcador. Sacá goles con el botón − o corregí el resultado.`);
+    return;
+  }
   // Si el partido YA tenía un resultado cargado, esto es una CORRECCIÓN: hay que deshacer el
   // impacto numérico del resultado viejo antes de aplicar el nuevo. Lo que sí NO se debe repetir
   // son las cosas que solo deben pasar una vez por partido (lesiones que cuentan partidos,
@@ -3789,6 +3821,7 @@ function ensureCareerState(){
   if(!Array.isArray(state.leaders)) state.leaders = [];
   if(!state.leaderState || typeof state.leaderState !== 'object') state.leaderState = {};
   if(state.profile && !Array.isArray(state.profile.classicRivals)) state.profile.classicRivals = [];
+  if(state.profile && typeof state.profile.superClassic !== 'string') state.profile.superClassic = '';
   if(!state.careerSeeded){
     state.careerSeeded = true;
     seedCareerStateFromHistory();
@@ -3922,7 +3955,11 @@ function applyMatchAggregates(m, res, sign, outcomeKind, meta){
 // ---- Cara a cara y clásicos ----
 function isClassicRival(name){
   const n = normName(name);
-  return !!n && ((state.profile && state.profile.classicRivals) || []).some(r => normName(r) === n);
+  return !!n && (((state.profile && state.profile.classicRivals) || []).some(r => normName(r) === n) || isSuperClassic(name));
+}
+function isSuperClassic(name){
+  const n = normName(name);
+  return !!n && !!(state.profile && state.profile.superClassic) && normName(state.profile.superClassic) === n;
 }
 function h2hFor(rival, club){
   const byClub = state.h2h && state.h2h[club !== undefined ? club : (state.profile.club || '')];
@@ -4152,22 +4189,31 @@ function classicRivalPool(){
 function renderClassicDraft(){
   const chips = document.getElementById('classicRivalChips');
   chips.innerHTML = classicDraft.length ? classicDraft.map((n, i) => `
-    <span class="importance-tag" style="display:inline-flex;align-items:center;gap:6px;">${escHtml(n)}
+    <span class="importance-tag" style="display:inline-flex;align-items:center;gap:6px;">🔥 ${escHtml(n)}
       <button type="button" onclick="removeClassicDraft(${i})" style="background:none;border:none;color:inherit;cursor:pointer;font-weight:700;padding:0;font-size:13px;">✕</button>
-    </span>`).join('') : '<span class="dateline">Todavía no elegiste ninguno.</span>';
+    </span>`).join('') + `<div class="dateline" style="width:100%;">${classicDraft.length} de ${MAX_CLASSICS} clásicos</div>` : '<span class="dateline">Todavía no elegiste ninguno (hasta ' + MAX_CLASSICS + ').</span>';
+  const sc = document.getElementById('superClassicChip');
+  sc.innerHTML = superDraft ? `
+    <span class="importance-tag" style="display:inline-flex;align-items:center;gap:6px;">👑 ${escHtml(superDraft)}
+      <button type="button" onclick="removeSuperDraft()" style="background:none;border:none;color:inherit;cursor:pointer;font-weight:700;padding:0;font-size:13px;">✕</button>
+    </span>` : '<span class="dateline">Todavía no elegiste tu Superclásico.</span>';
 }
 function removeClassicDraft(i){ classicDraft.splice(i, 1); renderClassicDraft(); }
-function openClassicRivalModal(){
-  ensureCareerState();
-  classicDraft = (state.profile.classicRivals || []).slice();
-  document.getElementById('classicClubName').textContent = state.profile.club || 'tu club';
-  const pool = classicRivalPool();
-  const sel = document.getElementById('classicRivalSelect');
-  const txt = document.getElementById('classicRivalText');
+function removeSuperDraft(){ superDraft = ''; renderClassicDraft(); }
+function fillRivalSelect(sel, txt, pool){
   sel.innerHTML = '<option value="">Elegí un rival…</option>' + pool.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('') + '<option value="__otro__">Otro (escribir manualmente)</option>';
   sel.style.display = pool.length ? 'block' : 'none';
   txt.style.display = pool.length ? 'none' : 'block';
   txt.value = '';
+}
+function openClassicRivalModal(){
+  ensureCareerState();
+  classicDraft = (state.profile.classicRivals || []).slice();
+  superDraft = state.profile.superClassic || '';
+  document.getElementById('classicClubName').textContent = state.profile.club || 'tu club';
+  const pool = classicRivalPool();
+  fillRivalSelect(document.getElementById('classicRivalSelect'), document.getElementById('classicRivalText'), pool);
+  fillRivalSelect(document.getElementById('superClassicSelect'), document.getElementById('superClassicText'), pool);
   renderClassicDraft();
   document.getElementById('classicRivalModal').style.display = 'flex';
 }
@@ -4176,17 +4222,33 @@ function addClassicDraft(){
   const txt = document.getElementById('classicRivalText');
   const name = (txt.style.display !== 'none' ? txt.value : sel.value).trim();
   if(!name || name === '__otro__') return;
-  if(classicDraft.length >= 3){ alert('Podés elegir hasta 3 clásicos rivales.'); return; }
+  if(classicDraft.length >= MAX_CLASSICS){ alert(`Podés elegir hasta ${MAX_CLASSICS} clásicos (además del Superclásico).`); return; }
   if(classicDraft.some(n => normName(n) === normName(name))) return;
   if(normName(name) === normName(state.profile.club)) return;
+  if(superDraft && normName(superDraft) === normName(name)){ alert(`${name} ya es tu Superclásico. Sacalo de ahí si querés ponerlo como clásico común.`); return; }
   classicDraft.push(name);
   txt.value = '';
   sel.value = '';
   renderClassicDraft();
 }
-function saveClassicRivals(list){
+function setSuperDraft(){
+  const sel = document.getElementById('superClassicSelect');
+  const txt = document.getElementById('superClassicText');
+  const name = (txt.style.display !== 'none' ? txt.value : sel.value).trim();
+  if(!name || name === '__otro__') return;
+  if(normName(name) === normName(state.profile.club)) return;
+  // Si ya estaba entre los clásicos comunes, pasa a ser el Superclásico (no queda duplicado).
+  classicDraft = classicDraft.filter(n => normName(n) !== normName(name));
+  superDraft = name;
+  txt.value = '';
+  sel.value = '';
+  renderClassicDraft();
+}
+function saveClassicRivals(list, superName){
   ensureCareerState();
-  state.profile.classicRivals = list.slice();
+  const sup = (superName || '').trim();
+  state.profile.classicRivals = list.filter(n => normName(n) !== normName(sup)).slice(0, MAX_CLASSICS);
+  state.profile.superClassic = sup;
   state.profile.classicRivalsAsked = state.profile.club || '';
   document.getElementById('classicRivalModal').style.display = 'none';
   renderExtraStats();
@@ -4249,15 +4311,17 @@ function renderExtraStats(){
       </div>`;
   }
   {
-    const rivals = state.profile.classicRivals || [];
+    const sup = state.profile.superClassic || '';
+    const rivals = (sup ? [sup] : []).concat(state.profile.classicRivals || []);
     const rows = rivals.map(r => {
+      const isSup = isSuperClassic(r);
       const rec = h2hFor(r, club);
       const label = h2hLabel(rec);
       const color = label === 'Lo dominás' ? '#3DDC84' : (label === 'Bestia negra' ? '#FF5C6C' : 'var(--ink-dim)');
       const dots = ((rec && rec.last) || []).slice(-5).map(x => `<span title="${escHtml(x.score)}" style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:3px;background:${x.o==='w'?'#3DDC84':(x.o==='l'?'#FF5C6C':'#FFD166')};"></span>`).join('');
       return `<div style="padding:10px 0;border-top:1px solid var(--line);">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
-          <b>🔥 ${escHtml(r)}</b><span style="font-size:12px;font-weight:700;color:${color};">${label}</span>
+          <b>${isSup ? '👑' : '🔥'} ${escHtml(r)}</b>${isSup ? '<span style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--gold);">Superclásico</span>' : ''}<span style="font-size:12px;font-weight:700;color:${color};">${label}</span>
         </div>
         <div style="font-size:13px;margin-top:4px;">${rec ? `${rec.w}G · ${rec.d}E · ${rec.l}P · goles ${rec.gf}-${rec.ga}` : 'Todavía no jugaron'} <span style="margin-left:8px;">${dots}</span></div>
       </div>`;
@@ -4286,72 +4350,6 @@ function renderLeadersStrip(){
   el.innerHTML = names.length
     ? `<div class="dateline" style="margin-bottom:8px;">⭐ Referentes del vestuario: <b style="color:var(--ink);">${names.map(p => escHtml(p.name)).join(', ')}</b> (${names.length}/${MAX_LEADERS}). Lo que les pasa pesa más; si se enojan, arrastran al grupo.</div>`
     : `<div class="dateline" style="margin-bottom:8px;">⭐ Todavía no marcaste referentes. Elegí hasta ${MAX_LEADERS} jugadores con el botón de cada ficha.</div>`;
-}
-
-// ---- Línea de tiempo de la carrera ----
-function yearOfLabel(str){ const m = /(\d{4})/.exec(String(str || '')); return m ? parseInt(m[1], 10) : null; }
-function seasonEndYear(label){
-  const y = yearOfLabel(label);
-  if(y === null) return null;
-  return /\d{4}\s*\/\s*\d{2}/.test(String(label)) ? y + 1 : y;
-}
-function dateSortKey(d){
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || '');
-  return m ? parseInt(m[1], 10) * 10000 + parseInt(m[2], 10) * 100 + parseInt(m[3], 10) : null;
-}
-function logCareer(entry){
-  ensureCareerState();
-  state.careerLog.push(entry);
-}
-function lastPlayedDate(){
-  const tl = state.timeline || [];
-  return tl.length ? (tl[tl.length - 1].date || '') : '';
-}
-function buildCareerTimeline(){
-  ensureCareerState();
-  const items = [];
-  state.careerLog.forEach(e => {
-    items.push({ key: e.sortKey || 0, icon: e.type === 'despido' ? '🚨' : '🤝', title: e.title, sub: e.sub || '' });
-  });
-  (state.careerHistory || []).forEach(c => {
-    const y = yearOfLabel(c.year);
-    const ms = c.matchStats || { played:0, won:0, drawn:0, lost:0, seasons:0, titles:0 };
-    items.push({ key: (y || 0) * 10000 + 9500, icon: '🚪', title: `Salida de ${c.club}`, sub: `Hasta ${c.year || '—'} · ${ms.seasons} temp. · ${ms.titles} títulos · ${ms.played} PJ (${ms.won}G-${ms.drawn}E-${ms.lost}P)` });
-  });
-  (state.trophies || []).forEach(t => {
-    if(!t.trophy || !t.met) return;
-    const dk = dateSortKey(t.date);
-    const ey = seasonEndYear(t.season);
-    items.push({ key: dk || ((ey || 0) * 10000 + 9000), icon: '🏆', title: `Campeón de ${t.competition}`, sub: `Temporada ${t.season}${t.date ? ' · ' + formatLongDate(t.date) : ''}` });
-  });
-  (state.seasonSummaries || []).forEach(s => {
-    const ey = seasonEndYear(s.season);
-    items.push({ key: (ey || 0) * 10000 + 9200, icon: '📅', title: `Temporada ${s.season} cerrada con ${s.club}`, sub: `${s.played} PJ (${s.won}G-${s.drawn}E-${s.lost}P)${s.titles.length ? ' · 🏆 ' + s.titles.join(', ') : ''}` });
-  });
-  const recs = [
-    { rec: state.unbeatenRecord, what: 'partidos sin perder', icon: '🛡️' },
-    { rec: state.streaks.win.record, what: 'victorias consecutivas', icon: '🔥' },
-  ];
-  recs.forEach(r => {
-    if(!r.rec || r.rec.count < 5) return;
-    const k = dateSortKey(r.rec.to || r.rec.from);
-    if(!k) return;
-    items.push({ key: k, icon: r.icon, title: `Récord: ${r.rec.count} ${r.what}`, sub: `${r.rec.from && r.rec.to && r.rec.from !== r.rec.to ? 'Del ' + formatLongDate(r.rec.from) + ' al ' + formatLongDate(r.rec.to) : formatLongDate(r.rec.to || r.rec.from)}${r.rec.club ? ' · ' + r.rec.club : ''}` });
-  });
-  items.sort((a, b) => b.key - a.key);
-  if(state.profile && state.profile.club && !state.firedFlag){
-    items.unshift({ key: Infinity, icon: '📍', title: `Actualidad: dirigís a ${state.profile.club}`, sub: `Temporada ${state.profile.year || '—'}` });
-  }
-  return items;
-}
-function renderCareerTimeline(){
-  const el = document.getElementById('careerTimeline');
-  if(!el) return;
-  const items = buildCareerTimeline();
-  el.innerHTML = items.length ? items.map(it => `
-    <div class="ctl-item"><div class="ctl-dot">${it.icon}</div>
-      <div class="ctl-body"><div class="ctl-title">${escHtml(it.title)}</div><div class="dateline">${escHtml(it.sub)}</div></div></div>`).join('')
-    : '<div class="empty-note">Tu carrera recién empieza.</div>';
 }
 
 function addTimelineEntry(m){
@@ -4399,8 +4397,17 @@ document.getElementById('classicRivalSelect').addEventListener('change', () => {
   }
 });
 document.getElementById('classicRivalAddBtn').addEventListener('click', addClassicDraft);
-document.getElementById('classicRivalSaveBtn').addEventListener('click', () => saveClassicRivals(classicDraft));
-document.getElementById('classicRivalNoneBtn').addEventListener('click', () => saveClassicRivals([]));
+document.getElementById('classicRivalSaveBtn').addEventListener('click', () => saveClassicRivals(classicDraft, superDraft));
+document.getElementById('classicRivalNoneBtn').addEventListener('click', () => saveClassicRivals([], ''));
+document.getElementById('superClassicSetBtn').addEventListener('click', setSuperDraft);
+document.getElementById('superClassicSelect').addEventListener('change', () => {
+  const sel = document.getElementById('superClassicSelect');
+  if(sel.value === '__otro__'){
+    sel.style.display = 'none';
+    const t = document.getElementById('superClassicText');
+    t.style.display = 'block'; t.value = ''; t.focus();
+  }
+});
 document.getElementById('classicRivalLaterBtn').addEventListener('click', () => {
   document.getElementById('classicRivalModal').style.display = 'none';
 });
@@ -5039,9 +5046,11 @@ function classicPressEntry(playedMatch, outcome){
   const rec = h2hFor(playedMatch.rival);
   const recText = rec ? `${rec.w}G-${rec.d}E-${rec.l}P` : 'recién empieza';
   const k = outcome === 'win' ? 'win' : (outcome === 'loss' ? 'loss' : 'draw');
+  const sup = isSuperClassic(playedMatch.rival);
+  const wording = t => sup ? t.replace(/\b[Cc]lásico\b/g, m => m[0] === 'C' ? 'Superclásico' : 'superclásico') : t;
   return {
-    text: pick(CLASSIC_QUESTIONS[k])(playedMatch.rival, recText), playerId:null,
-    options: ['PICANTE','TRANQUILO','EVASIVO'].map(tag => ({ tag, label: pick(CLASSIC_ANSWERS[k][tag])(), ...CLASSIC_DELTAS[k][tag] }))
+    text: wording(pick(CLASSIC_QUESTIONS[k])(playedMatch.rival, recText)), playerId:null,
+    options: ['PICANTE','TRANQUILO','EVASIVO'].map(tag => ({ tag, label: wording(pick(CLASSIC_ANSWERS[k][tag])()), ...CLASSIC_DELTAS[k][tag] }))
   };
 }
 
@@ -7530,7 +7539,6 @@ document.getElementById('closeSeasonBtn').addEventListener('click', () => {
   }
   maybeShowSeasonSummary();
   renderSeasonSummaryList();
-  renderCareerTimeline();
 });
 
 // Índice del trofeo que se está editando en este momento (null = ninguno). Editar un trofeo ya
@@ -7583,7 +7591,6 @@ function saveManualTrophy(){
 
 function renderTrophies(){
   renderSeasonSummaryList();
-  renderCareerTimeline();
   const list = document.getElementById('trophyList');
   const empty = document.getElementById('trophyEmpty');
   if(!list || !empty) return;
@@ -7749,7 +7756,6 @@ document.getElementById('changeClubBtn').addEventListener('click', () => {
     farewell = `Te vas de ${oldClub} en buenos términos, sin pena ni gloria. No se descarta un regreso más adelante.`;
   }
 
-  const exitKeyForLog = (yearOfLabel(state.profile.year) || 0) * 10000 + 9500;
   state.careerHistory.unshift({
     club: oldClub,
     year: state.profile.year || '—',
@@ -7762,7 +7768,7 @@ document.getElementById('changeClubBtn').addEventListener('click', () => {
   state.eventHistory.unshift({ matchId:null, rival:'', date:'', tag:'CAMBIO DE CLUB', title:`Salida de ${oldClub}`, body: farewell });
 
   // Nuevo club: se resetean plantel y calendario, las barras arrancan en punto medio salvo la personalidad que se mantiene.
-  state.profile = { name: state.profile.name, club: newClub, year: newYear, goal: '', photo: state.profile.photo, league:'', competitions:[], competitionObjectives:{}, competitionPriority:{}, objectivesLocked:false, competitionNotPlayed:{}, competitionResolvedThisSeason:{}, classicRivals:[], classicRivalsAsked:'', loggedClub:newClub };
+  state.profile = { name: state.profile.name, club: newClub, year: newYear, goal: '', photo: state.profile.photo, league:'', competitions:[], competitionObjectives:{}, competitionPriority:{}, objectivesLocked:false, competitionNotPlayed:{}, competitionResolvedThisSeason:{}, classicRivals:[], superClassic:'', classicRivalsAsked:'', loggedClub:newClub };
   state.stats = { personality: state.stats.personality, clubRelation:50, playerRelation:50, fanRelation:50, pressRelation:50 };
   state.players = [];
   state.matches = [];
@@ -7796,7 +7802,6 @@ document.getElementById('changeClubBtn').addEventListener('click', () => {
   state.leaderState = {};
   state.streaks.win.current = { count:0, from:'', to:'' };
   state.streaks.winless.current = { count:0, from:'', to:'' };
-  logCareer({ type:'asuncion', club:newClub, title:`Asumís en ${newClub}`, sub:`Temporada ${newYear || '—'}`, sortKey: Math.max((yearOfLabel(newYear) || 0) * 10000 + 101, exitKeyForLog + 1) });
   state.stintStats = { played:0, won:0, drawn:0, lost:0, seasons:0, titles:0 };
   state.coachStability = { cooldown:0, threatWarned:false, pressureFlags:{}, warnFlags:{} };
   state.firedFlag = false;
@@ -7829,7 +7834,6 @@ document.getElementById('changeClubBtn').addEventListener('click', () => {
   renderEventHistory();
   renderTimeline();
   renderCareer();
-  renderCareerTimeline();
   renderExtraStats();
 });
 
@@ -7840,7 +7844,6 @@ document.getElementById('changeClubBtn').addEventListener('click', () => {
 // (nombre del club, año) o eliminar directamente.
 let editingCareerIdx = null;
 function renderCareer(){
-  renderCareerTimeline();
   const list = document.getElementById('careerList');
   const empty = document.getElementById('careerEmpty');
   if(state.careerHistory.length === 0){
