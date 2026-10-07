@@ -259,6 +259,12 @@
     color: var(--ink-dim);
   }
 
+  .ext-card{ margin-top:18px; padding:18px 20px; border-radius:16px; border:1px solid var(--surface-border); background:var(--surface); }
+  .ext-title{ font-family:'Barlow Condensed',sans-serif; font-size:13px; letter-spacing:2px; text-transform:uppercase; color:var(--pitch); font-weight:700; margin-bottom:10px; }
+  .ctl{ position:relative; margin:6px 0 4px 14px; padding-left:22px; border-left:2px solid var(--line); }
+  .ctl-item{ position:relative; padding:0 0 18px 0; }
+  .ctl-dot{ position:absolute; left:-43px; top:-2px; width:32px; height:32px; border-radius:50%; background:var(--paper-dark); border:1px solid var(--surface-border); display:flex; align-items:center; justify-content:center; font-size:16px; }
+  .ctl-title{ font-weight:700; font-size:15px; }
   .unbeaten-card{
     margin-top:18px; padding:18px 20px; border-radius:16px;
     border:1px solid rgba(31,209,179,0.45);
@@ -623,6 +629,35 @@
   <button class="btn" id="deathScreenBtn" style="margin-top:40px;">Toca para volver al menú principal</button>
 </div>
 
+<div id="classicRivalModal" class="modal-overlay" style="display:none;">
+  <div class="login-card event-alert-card">
+    <div class="checklist-title" style="margin-bottom:4px;">Clásicos rivales de <span id="classicClubName">—</span></div>
+    <div class="dateline" style="margin-bottom:14px;">Elegí hasta 3 clásicos rivales. Sus partidos se marcan como "Clásico" y se lleva el historial cara a cara contra cada uno.</div>
+    <label>Rival</label>
+    <div style="display:flex; gap:8px;">
+      <select id="classicRivalSelect" style="flex:1;"></select>
+      <input id="classicRivalText" type="text" placeholder="Escribí el nombre del rival" autocomplete="off" style="flex:1; display:none;">
+      <button type="button" class="btn ghost small" id="classicRivalAddBtn" style="white-space:nowrap;">+ Agregar</button>
+    </div>
+    <div id="classicRivalChips" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;"></div>
+    <div style="display:flex; gap:10px; margin-top:20px; flex-wrap:wrap;">
+      <button class="btn ghost" id="classicRivalLaterBtn" style="flex:1;">Decidir después</button>
+      <button class="btn ghost" id="classicRivalNoneBtn" style="flex:1;">No tengo clásico</button>
+      <button class="btn" id="classicRivalSaveBtn" style="flex:1;">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div id="seasonSummaryModal" class="modal-overlay" style="display:none;">
+  <div class="login-card event-alert-card" style="max-height:88vh; overflow-y:auto;">
+    <div id="seasonSummaryBody"></div>
+    <div style="display:flex; gap:10px; margin-top:18px;">
+      <button class="btn ghost" id="seasonSummaryCopyBtn" style="flex:1;">Copiar resumen</button>
+      <button class="btn" id="seasonSummaryCloseBtn" style="flex:1;">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <div id="removePlayerModal" class="modal-overlay" style="display:none;">
   <div class="login-card event-alert-card">
     <div class="checklist-title" style="margin-bottom:4px;">Dar de baja a <span id="removePlayerName">—</span></div>
@@ -858,6 +893,9 @@
         <span class="ub-badge" id="unbeatenBadge" style="display:none;">Récord en curso</span>
       </div>
     </div>
+    <div id="streaksCard"></div>
+    <div id="scorersCard"></div>
+    <div id="classicsCard"></div>
 
     <div class="section-title">Estado del entrenador</div>
     <div class="bar-block">
@@ -908,6 +946,13 @@
       <button class="btn ghost" id="closeSeasonBtn" style="margin-top:10px;">Cerrar temporada y evaluar</button>
     </div>
 
+    <div class="section-title">Resumen de temporada</div>
+    <div class="card">
+      <div class="dateline" style="margin-bottom:10px;">Al cerrar la temporada se arma y se archiva un resumen. Acá podés ver el de la temporada en curso y los anteriores.</div>
+      <button class="btn ghost" type="button" onclick="openLiveSeasonSummary()">Ver resumen de la temporada en curso</button>
+    </div>
+    <div class="match-list" id="seasonSummaryList"></div>
+
     <div class="section-title">Títulos</div>
     <!-- Pedido del usuario: "el historial de objetivos cumplidos tampoco me interesa que
     figure... solo títulos". Por dentro, state.trophies sigue guardando CUALQUIER objetivo
@@ -951,6 +996,9 @@
 
   <!-- CARRERA / CAMBIO DE CLUB -->
   <section class="panel" id="panel-carrera">
+    <div class="section-title">Línea de tiempo de la carrera</div>
+    <div id="careerTimeline" class="ctl"></div>
+
     <div class="section-title">Historial de clubes</div>
     <div class="match-list" id="careerList"></div>
     <div id="careerEmpty" class="empty-note">Todavía no hay clubes anteriores registrados.</div>
@@ -1073,6 +1121,7 @@
   <!-- PLANTILLA -->
   <section class="panel" id="panel-plantilla">
     <div class="section-title">Plantel actual</div>
+    <div id="leadersStrip"></div>
     <div id="playersList"></div>
     <div id="playersEmpty" class="empty-note">Todavía no cargaste jugadores.</div>
 
@@ -1186,6 +1235,7 @@
   <section id="matchView">
     <button class="back-link" id="backBtn">← Volver al calendario</button>
     <div class="section-title" id="matchHeaderTitle" style="border:none; margin-top:0;"></div>
+    <div id="matchH2HNote" class="dateline" style="display:none; margin:4px 0 10px;"></div>
 
     <div id="matchViewZoneAnchor">
       <div id="matchInteractionZone">
@@ -1277,7 +1327,7 @@
 // una esquina fija de la pantalla (#buildBadge) además de en el header de adentro del juego
 // (#headerBuildLine), para poder confirmar sin dudas si dos dispositivos están corriendo el
 // mismo archivo. Para la próxima entrega, alcanza con cambiar este único string.
-const BUILD_ID = 'RULEBATCH-27';
+const BUILD_ID = 'RULEBATCH-29';
 document.getElementById('buildBadge').textContent = BUILD_ID;
 const headerBuildLineEl = document.getElementById('headerBuildLine');
 if(headerBuildLineEl) headerBuildLineEl.textContent = `build ${BUILD_ID}`;
@@ -1725,6 +1775,7 @@ function getPlayerMood(id){
 function adjustPlayerMood(id, delta){
   const cur = getPlayerMood(id);
   state.playerMood[id] = Math.max(0, Math.min(100, cur + delta));
+  checkLeaderMood(id);
 }
 function getLeaveRisk(id){ return state.playerLeaveRisk[id] || 0; }
 function adjustLeaveRisk(id, delta){
@@ -1803,6 +1854,13 @@ function tickAvailability(){
 let nextId = 1;
 let activeMatchId = null;
 let currentScorers = [];
+let extStatsTab = 'rachas';
+// Estado suelto de las funciones de carrera (RULEBATCH-29)
+let pendingRecordBroken = null; // { type, count } del último partido guardado (para la prensa)
+const MAX_LEADERS = 3;
+let currentSummaryShown = null;
+let pendingSeasonSummary = null;
+let classicDraft = [];
 
 // Bug real: jugadores y partidos comparten el mismo contador de IDs (nextId). Si por algún
 // motivo ese contador queda desincronizado respecto de los IDs que ya están en uso (por ejemplo,
@@ -2081,6 +2139,22 @@ document.getElementById('saveProfile').addEventListener('click', () => {
   renderProfile();
   renderOnboardingChecklist();
   maybeCompleteOnboarding();
+  // RULEBATCH-29: registra la llegada al club en la carrera y pregunta por los clásicos rivales.
+  if(state.profile.club){
+    ensureCareerState();
+    if(state.profile.loggedClub !== state.profile.club){
+      const lastAsun = state.careerLog.slice().reverse().find(e => e.type === 'asuncion');
+      if(lastAsun && state.profile.loggedClub && lastAsun.club === state.profile.loggedClub){
+        lastAsun.club = state.profile.club;
+        lastAsun.title = `Asumís en ${state.profile.club}`;
+      } else {
+        logCareer({ type:'asuncion', club: state.profile.club, title:`Asumís en ${state.profile.club}`, sub:`Temporada ${state.profile.year || '—'}`, sortKey: (yearOfLabel(state.profile.year) || 0) * 10000 + 101 });
+      }
+      state.profile.loggedClub = state.profile.club;
+    }
+    renderCareerTimeline();
+    maybePromptClassicRival();
+  }
 });
 
 // ------------------ CHECKLIST DE CONFIGURACIÓN INICIAL ------------------
@@ -2202,6 +2276,7 @@ function renderProfile(){
   // partidos) con el mejor histórico guardado aparte (state.maxUnbeatenStreak), para que una
   // racha vieja que ya salió del recorte no se "pierda" del máximo mostrado.
   renderUnbeatenCard();
+  renderExtraStats();
   document.getElementById('eventsValue').textContent = state.eventHistory.length;
 
   document.getElementById('personalityValue').textContent = state.stats.personality;
@@ -2406,6 +2481,7 @@ function coachCredit(){
 function fireCoach(reason){
   const club = state.profile.club || 'el club';
   state.firedFlag = true;
+  logCareer({ type:'despido', club, title:`Despedido de ${club}`, sub:`Temporada ${state.profile.year || '—'}`, sortKey: dateSortKey(lastPlayedDate()) || ((yearOfLabel(state.profile.year) || 0) * 10000 + 9000) });
   let title, body;
   if(reason === 'racha10'){
     title = 'FIN DEL CICLO';
@@ -2642,6 +2718,7 @@ document.getElementById('addPlayer').addEventListener('click', () => {
 });
 
 function renderPlayers(){
+  renderLeadersStrip();
   const list = document.getElementById('playersList');
   const empty = document.getElementById('playersEmpty');
   populateInjuryPlayerSelect();
@@ -2663,10 +2740,13 @@ function renderPlayers(){
     <div class="player-card">
       <div class="player-card-top">
         <div>
-          <div class="player-card-name">${pl.name}</div>
+          <div class="player-card-name">${isLeader(pl.id) ? '⭐ ' : ''}${pl.name}</div>
           <div class="player-card-meta">${pl.pos || '—'} · ${pl.status}</div>
         </div>
-        <button class="btn ghost small" onclick="removePlayer(${pl.id})">Quitar</button>
+        <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+          <button class="btn ghost small" onclick="toggleLeader(${pl.id})">${isLeader(pl.id) ? '⭐ Referente · quitar' : '☆ Hacer referente'}</button>
+          <button class="btn ghost small" onclick="removePlayer(${pl.id})">Quitar</button>
+        </div>
       </div>
       <div class="f" style="margin-top:8px; max-width:220px;">
         <label style="font-size:11px;">Jerarquía</label>
@@ -2747,6 +2827,7 @@ document.getElementById('removeConfirmBtn').addEventListener('click', () => {
     adjustStat('clubRelation', Math.round(2*tierMult));
   }
   state.players = state.players.filter(x=>x.id!==id);
+  onPlayerLeft(p);
   state.eventHistory.unshift({ matchId:null, rival:'', date:'', tag:'MERCADO', title:`Salida: ${p.name}`, body });
   pendingRemovePlayerId = null;
   document.getElementById('removePlayerModal').style.display = 'none';
@@ -2863,8 +2944,10 @@ document.getElementById('addMatch').addEventListener('click', () => {
   const rivalSelect = document.getElementById('mRivalSelect');
   const rival = rivalSelect.style.display !== 'none' ? rivalSelect.value : document.getElementById('mRival').value.trim();
   const date = document.getElementById('mDate').value.trim();
-  const importanceValue = document.getElementById('mImportance').value;
+  let importanceValue = document.getElementById('mImportance').value;
   if(!rival) return;
+  // Si el rival es uno de tus clásicos y no elegiste otra importancia, se marca como Clásico.
+  if(importanceValue === 'normal' && competitionKind(comp) === 'liga' && isClassicRival(rival)) importanceValue = 'clasico';
   state.matches.push({ id: allocateId(), rival, date, comp, importance: importanceValue, status:'pendiente', event:null, result:null });
   document.getElementById('mRival').value='';
   document.getElementById('mDate').value='';
@@ -2952,11 +3035,18 @@ function deleteMatch(id){
     ? ' Ya tiene un resultado cargado: se va a perder.'
     : (m.event ? ' Ya tiene un evento de la ruleta cargado: se va a perder.' : '');
   if(!confirm(`¿Eliminar el partido vs ${m.rival}${m.date ? ' ('+m.date+')' : ''} del calendario?${detalle}`)) return;
+  // RULEBATCH-29: si el partido tenía resultado, se deshacen también goleadores, cara a cara y
+  // resumen de temporada (exactamente lo que había sumado, según aggMeta).
+  if(m.result && m.result.aggMeta){
+    const oc = computeMatchOutcome(m.result.home, m.result.away, m.result.penaltyWinner || null).outcome;
+    applyMatchAggregates(m, m.result, -1, oc, m.result.aggMeta);
+  }
   state.matches.splice(idx, 1);
   if(activeMatchId === id){
     activeMatchId = null;
     closeMatchView();
   }
+  renderExtraStats();
   renderMatches();
   renderGameDate();
   renderNextMatchBox();
@@ -3034,7 +3124,8 @@ document.getElementById('editMatchConfirmBtn').addEventListener('click', () => {
 // ------------------ VISTA DE PARTIDO ------------------
 function renderScorerPicker(){
   const picker = document.getElementById('scorerPicker');
-  const available = state.players.filter(p => !currentScorers.includes(p.name));
+  // Cada vez que se agrega un jugador cuenta como UN gol suyo (se puede repetir para dobletes).
+  const available = state.players.slice();
   picker.innerHTML = '<option value="">Elegí un jugador…</option>' + available.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
 }
 function renderScorerChips(){
@@ -3045,10 +3136,15 @@ function renderScorerChips(){
     empty.style.display = 'block';
   } else {
     empty.style.display = 'none';
-    chips.innerHTML = currentScorers.map((name, idx) => `
+    const groups = [];
+    currentScorers.forEach((name, idx) => {
+      const g = groups.find(x => x.name === name);
+      if(g){ g.n += 1; g.last = idx; } else groups.push({ name, n:1, last: idx });
+    });
+    chips.innerHTML = groups.map(g => `
       <span class="importance-tag" style="display:inline-flex; align-items:center; gap:6px;">
-        ${name}
-        <button type="button" onclick="removeScorer(${idx})" style="background:none; border:none; color:inherit; cursor:pointer; font-weight:700; padding:0; font-size:13px;">✕</button>
+        ${escHtml(g.name)}${g.n > 1 ? ' ×' + g.n : ''}
+        <button type="button" onclick="removeScorer(${g.last})" style="background:none; border:none; color:inherit; cursor:pointer; font-weight:700; padding:0; font-size:13px;">✕</button>
       </span>
     `).join('');
   }
@@ -3082,6 +3178,7 @@ function loadMatchIntoZone(id){
   try{ checkPreMatchConference(m); }catch(e){ console.warn('Error al mostrar la previa del partido:', e); }
   document.getElementById('scoreClubLabel').textContent = state.profile.club || 'Club';
   document.getElementById('scoreRivalLabel').textContent = m.rival;
+  renderMatchH2H(m);
 
   document.getElementById('matchPreEvent').style.display = 'block';
   document.getElementById('pressConference').style.display = 'none';
@@ -3242,6 +3339,7 @@ document.getElementById('saveResult').addEventListener('click', () => {
   // son las cosas que solo deben pasar una vez por partido (lesiones que cuentan partidos,
   // eventos futuros que cuentan cuenta regresiva, la conferencia de prensa, etc.).
   const isEdit = !!m.result;
+  pendingRecordBroken = null;
   const oldResult = isEdit ? { ...m.result } : null;
   const info = m.importance ? importanceInfo(m.comp, m.importance) : null;
   const mult = info ? info.mult : 1;
@@ -3253,6 +3351,8 @@ document.getElementById('saveResult').addEventListener('click', () => {
 
   if(isEdit){
     const oldOutcome = computeMatchOutcome(oldResult.home, oldResult.away, oldResult.penaltyWinner || null);
+    // Deshace goleadores / cara a cara / resultados de la temporada que había sumado este resultado.
+    if(oldResult.aggMeta) applyMatchAggregates(m, oldResult, -1, oldOutcome.outcome, oldResult.aggMeta);
     Object.entries(oldOutcome.effects).forEach(([stat, val]) => { if(val !== 0) adjustStatRaw(stat, -val * effectiveMult); });
     if(oldOutcome.outcome === 'win'){
       state.stintStats.won = Math.max(0, state.stintStats.won - 1);
@@ -3318,10 +3418,13 @@ document.getElementById('saveResult').addEventListener('click', () => {
       penaltyWinner = document.getElementById('penaltiesWinner').value === 'away' ? 'away' : 'home';
     }
   }
-  m.result = { home, away, scorers: scorersNames.join(', '), note: document.getElementById('matchNote').value.trim(), penaltyWinner };
+  ensureCareerState();
+  const aggMeta = (isEdit && oldResult.aggMeta) ? oldResult.aggMeta : { season: seasonLabel(), club: state.profile.club || '', rival: m.rival };
+  m.result = { home, away, scorers: scorersNames.join(', '), note: document.getElementById('matchNote').value.trim(), penaltyWinner, aggMeta };
   m.status = 'jugado';
   const isBigMatch = mult >= 1.6;
   const outcome = computeMatchOutcome(home, away, penaltyWinner);
+  applyMatchAggregates(m, m.result, 1, outcome.outcome, aggMeta);
 
   Object.entries(outcome.effects).forEach(([stat, val]) => {
     if(val !== 0) adjustStatRaw(stat, val * effectiveMult);
@@ -3429,12 +3532,12 @@ document.getElementById('saveResult').addEventListener('click', () => {
       // motor del cierre de temporada) para registrar el título de verdad, sumar al conteo de
       // títulos y disparar el festejo. Se marca "ya registrado esta temporada" para esa
       // competencia, así si más tarde se cierra la temporada no se cuenta dos veces.
-      if(!isEdit && copaPhaseLeg.phase === 'final' && seriesResult === 'avanza'){
+      if(copaPhaseLeg.phase === 'final' && seriesResult === 'avanza' && !(state.profile.competitionResolvedThisSeason && state.profile.competitionResolvedThisSeason[m.comp])){
         // Una competencia "extra" no tiene objetivo/prioridad declarados -- se fuerza la
         // prioridad más baja (igual cuenta como título real en el Palmarés, solo que con menos
         // impacto en las barras que un título de una competencia de la temporada).
         const priority = isExtraComp ? 'bajo' : ((state.profile.competitionPriority && state.profile.competitionPriority[m.comp]) || 'medio');
-        autoTitleWon = applyObjectiveOutcome(m.comp, 'Ganar el título', priority, true, 'campeon', true);
+        autoTitleWon = applyObjectiveOutcome(m.comp, 'Ganar el título', priority, true, 'campeon', true, m.date);
         if(!state.profile.competitionResolvedThisSeason) state.profile.competitionResolvedThisSeason = {};
         state.profile.competitionResolvedThisSeason[m.comp] = 'Campeón';
         tieDecisionApplied.objectiveAutoResolved = true;
@@ -3456,11 +3559,34 @@ document.getElementById('saveResult').addEventListener('click', () => {
         if(!resolvedAlready && targetPhase){
           const priority = (state.profile.competitionPriority && state.profile.competitionPriority[m.comp]) || 'medio';
           const met = CUP_PHASE_SCORE[copaPhaseLeg.phase] >= CUP_PHASE_SCORE[targetPhase];
-          applyObjectiveOutcome(m.comp, objective, priority, met, copaPhaseLeg.phase, true);
+          applyObjectiveOutcome(m.comp, objective, priority, met, copaPhaseLeg.phase, true, m.date);
           if(!state.profile.competitionResolvedThisSeason) state.profile.competitionResolvedThisSeason = {};
           state.profile.competitionResolvedThisSeason[m.comp] = met ? (copaPhaseLeg.phase || 'cumplido') : 'no cumplido';
           tieDecisionApplied.objectiveAutoResolved = true;
         }
+      }
+    }
+  }
+  // Bug real reportado por el usuario: "cargué el resultado de una final de playoff ganada y no me
+  // puso título, sino un partido más". Las fases de playoff de una LIGA (value 'final_playoff')
+  // no pasaban por el motor de copas, así que ganar la Gran Final no registraba nada. Ahora ganarla
+  // (en cancha o por penales) registra el título solo -- Palmarés, conteo, festejo y pregunta de
+  // campeón -- y perderla marca el subcampeonato en la prensa. Se corrige igual que las copas.
+  if(m.importance === 'final_playoff' && competitionKind(m.comp) === 'liga' && !tieDecisionApplied && outcome.outcome !== 'draw'){
+    const won = outcome.outcome === 'win';
+    tieDecisionApplied = { phase:'final', outcome: won ? 'avanza' : 'eliminado', effects:{}, reputationDelta:0 };
+    const resolvedMap = state.profile.competitionResolvedThisSeason || (state.profile.competitionResolvedThisSeason = {});
+    if(won && !resolvedMap[m.comp]){
+      const priority = isExtraComp ? 'bajo' : ((state.profile.competitionPriority && state.profile.competitionPriority[m.comp]) || 'medio');
+      autoTitleWon = applyObjectiveOutcome(m.comp, 'Ganar el título', priority, true, 'Campeón', true, m.date);
+      resolvedMap[m.comp] = 'Campeón';
+      tieDecisionApplied.objectiveAutoResolved = true;
+      if(!isEdit){
+        state.eventHistory.unshift({
+          matchId: m.id, rival: m.rival, date: m.date, tag:'PLAYOFF',
+          title: `¡${state.profile.club || 'El equipo'} se queda con el título de ${m.comp}!`,
+          body: `${outcome.viaPenalties ? 'Tras empatar en la cancha, ganó desde los doce pasos' : 'Ganó la final'} ante ${m.rival}: un título que se festeja a lo grande.`
+        });
       }
     }
   }
@@ -3472,6 +3598,8 @@ document.getElementById('saveResult').addEventListener('click', () => {
     (state.pendingFutureEvents || []).forEach(f => f.matchesRemaining -= 1);
     checkPressLeak();
     addTimelineEntry(m);
+  } else {
+    updateTimelineEntryForEdit(m);
   }
   renderEventHistory();
   renderProfile();
@@ -3482,7 +3610,7 @@ document.getElementById('saveResult').addEventListener('click', () => {
   if(isEdit){
     state._suppressExtremeChecks = false;
     checkExtremeStates();
-    alert('Resultado corregido correctamente.');
+    alert('Resultado corregido correctamente.' + (autoTitleWon ? ' Además se registró el título en el Palmarés.' : ''));
     closeMatchView();
     switchTab('calendario');
     renderMatches();
@@ -3550,6 +3678,7 @@ function computeMaxUnbeatenStreak(){
 // Se lleva una racha en curso (count/from/to) y un récord que SOLO se pisa cuando la racha en
 // curso lo SUPERA. Nunca se recalcula "hacia abajo" desde la línea de tiempo (que está recortada).
 function normalizeUnbeaten(){
+  ensureCareerState();
   if(!state.unbeatenRecord || typeof state.unbeatenRecord !== 'object') state.unbeatenRecord = { count:0, from:'', to:'', club:'' };
   const seedCurrent = !state.currentUnbeaten || typeof state.currentUnbeaten !== 'object';
   if(seedCurrent) state.currentUnbeaten = { count:0, from:'', to:'' };
@@ -3580,6 +3709,7 @@ function updateUnbeatenRecord(date, outcome){
     cur.count += 1;
     cur.to = date || cur.to || '';
     if(cur.count > (state.unbeatenRecord.count || 0)){
+      if((state.unbeatenRecord.count || 0) >= 3) pendingRecordBroken = { type:'unbeaten', count: cur.count };
       state.unbeatenRecord = { count: cur.count, from: cur.from, to: cur.to, club: state.profile.club || '' };
     } else if(cur.count === state.unbeatenRecord.count && state.unbeatenRecord.from === cur.from){
       state.unbeatenRecord.to = cur.to; // misma racha creciendo
@@ -3626,6 +3756,604 @@ function renderUnbeatenCard(){
   document.getElementById('unbeatenBadge').style.display = (rec.count > 0 && cur.count >= rec.count) ? 'inline-block' : 'none';
 }
 
+// ================== CARRERA: rachas, goleadores, cara a cara, referentes, resúmenes ==================
+// Pedido del usuario (RULEBATCH-29): resumen de temporada, clásicos rivales con cara a cara,
+// rachas con récord, goleadores acumulados, referentes del vestuario y línea de tiempo de la
+// carrera. Todo vive en estado propio y se normaliza con ensureCareerState() (cuentas viejas).
+function escHtml(s){
+  return String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function seasonLabel(){ return (state.season && state.season.year) || '—'; }
+function barsSnapshot(){ return { ...state.stats, reputation: state.reputation }; }
+function newSeasonStats(){ return { results: [], startBars: barsSnapshot(), season: seasonLabel() }; }
+function scorerNames(res){
+  return (res && res.scorers) ? String(res.scorers).split(',').map(s => s.trim()).filter(Boolean) : [];
+}
+function normName(s){
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
+}
+function outcomeKey(kind){ return kind === 'win' ? 'w' : (kind === 'loss' ? 'l' : 'd'); }
+
+function ensureCareerState(){
+  if(!state.streaks || typeof state.streaks !== 'object') state.streaks = {};
+  ['win','winless'].forEach(k => {
+    if(!state.streaks[k] || typeof state.streaks[k] !== 'object') state.streaks[k] = {};
+    if(!state.streaks[k].record) state.streaks[k].record = { count:0, from:'', to:'', club:'' };
+    if(!state.streaks[k].current) state.streaks[k].current = { count:0, from:'', to:'' };
+  });
+  if(!state.seasonStats || !Array.isArray(state.seasonStats.results)) state.seasonStats = newSeasonStats();
+  if(!state.scorerStats || typeof state.scorerStats !== 'object') state.scorerStats = {};
+  if(!state.h2h || typeof state.h2h !== 'object') state.h2h = {};
+  if(!Array.isArray(state.seasonSummaries)) state.seasonSummaries = [];
+  if(!Array.isArray(state.careerLog)) state.careerLog = [];
+  if(!Array.isArray(state.leaders)) state.leaders = [];
+  if(!state.leaderState || typeof state.leaderState !== 'object') state.leaderState = {};
+  if(state.profile && !Array.isArray(state.profile.classicRivals)) state.profile.classicRivals = [];
+  if(!state.careerSeeded){
+    state.careerSeeded = true;
+    seedCareerStateFromHistory();
+  }
+}
+
+// Una sola vez por partida: toma lo que ya estaba cargado (partidos jugados, línea de tiempo)
+// para que las estadísticas nuevas no arranquen en cero con una partida que ya venía andando.
+function seedCareerStateFromHistory(){
+  const club = (state.profile && state.profile.club) || '';
+  (state.timeline || []).forEach(t => {
+    bumpStreakEntry(state.streaks.win, t.outcome === 'victoria', t.date, club);
+    bumpStreakEntry(state.streaks.winless, t.outcome !== 'victoria', t.date, club);
+  });
+  const firstSeason = !(state.stintStats && state.stintStats.seasons > 0);
+  (state.matches || []).forEach(m => {
+    if(m.status !== 'jugado' || !m.result || m.result.aggMeta) return;
+    const oc = computeMatchOutcome(m.result.home, m.result.away, m.result.penaltyWinner || null).outcome;
+    m.result.aggMeta = { season: seasonLabel(), club, rival: m.rival, inSeason: firstSeason };
+    applyMatchAggregates(m, m.result, 1, oc, m.result.aggMeta);
+  });
+}
+
+// ---- Rachas ----
+function bumpStreakEntry(entry, hit, date, club){
+  if(!hit){ entry.current = { count:0, from:'', to:'' }; return false; }
+  const cur = entry.current;
+  const prevRecord = entry.record.count || 0;
+  if(!cur.count) cur.from = date || '';
+  cur.count += 1;
+  cur.to = date || cur.to || '';
+  let broke = false;
+  if(cur.count > prevRecord){
+    entry.record = { count: cur.count, from: cur.from, to: cur.to, club: club || '' };
+    broke = prevRecord >= 3;
+  } else if(cur.count === prevRecord && entry.record.from === cur.from){
+    entry.record.to = cur.to;
+  }
+  return broke;
+}
+function updateExtraStreaks(date, outcome){
+  ensureCareerState();
+  const club = state.profile.club || '';
+  if(bumpStreakEntry(state.streaks.win, outcome === 'victoria', date, club)){
+    pendingRecordBroken = { type:'win', count: state.streaks.win.current.count };
+  }
+  bumpStreakEntry(state.streaks.winless, outcome !== 'victoria', date, club);
+}
+function trailingRun(tl, pred){
+  let n = 0;
+  for(let i = tl.length - 1; i >= 0; i--){ if(!pred(tl[i])) break; n++; }
+  return n;
+}
+// Al corregir un resultado ya cargado, la racha EN CURSO se vuelve a calcular desde la línea de
+// tiempo (los récords nunca bajan). Si la racha es más larga que la ventana de 30 partidos
+// visibles, se conserva lo guardado.
+function refreshStreaksFromTimeline(){
+  ensureCareerState();
+  normalizeUnbeaten();
+  const tl = state.timeline || [];
+  const club = state.profile.club || '';
+  const defs = [
+    { pred: t => t.outcome !== 'derrota', get: () => state.currentUnbeaten, set: o => { state.currentUnbeaten = o; }, rec: () => state.unbeatenRecord, setRec: r => { state.unbeatenRecord = r; } },
+    { pred: t => t.outcome === 'victoria', get: () => state.streaks.win.current, set: o => { state.streaks.win.current = o; }, rec: () => state.streaks.win.record, setRec: r => { state.streaks.win.record = r; } },
+    { pred: t => t.outcome !== 'victoria', get: () => state.streaks.winless.current, set: o => { state.streaks.winless.current = o; }, rec: () => state.streaks.winless.record, setRec: r => { state.streaks.winless.record = r; } },
+  ];
+  defs.forEach(d => {
+    const run = trailingRun(tl, d.pred);
+    if(run < tl.length){
+      d.set(run ? { count: run, from: tl[tl.length - run].date || '', to: tl[tl.length - 1].date || '' } : { count:0, from:'', to:'' });
+    } else if(d.get().count < run){
+      d.set({ count: run, from: tl[0].date || '', to: tl[tl.length - 1].date || '' });
+    }
+    const cur = d.get();
+    if(cur.count > (d.rec().count || 0)) d.setRec({ count: cur.count, from: cur.from, to: cur.to, club });
+    // Si al corregir un resultado del pasado se formó una racha más larga que el récord, el
+    // récord sube (nunca baja).
+    let best = 0, bestEnd = -1, c = 0;
+    tl.forEach((t, i) => { if(d.pred(t)){ c++; if(c > best){ best = c; bestEnd = i; } } else c = 0; });
+    if(best > (d.rec().count || 0)){
+      d.setRec({ count: best, from: tl[bestEnd - best + 1].date || '', to: tl[bestEnd].date || '', club });
+    }
+  });
+  state.maxUnbeatenStreak = Math.max(state.maxUnbeatenStreak || 0, state.unbeatenRecord.count || 0);
+}
+function updateTimelineEntryForEdit(m){
+  const t = (state.timeline || []).find(x => x.matchId === m.id);
+  if(!t || !m.result) return;
+  const r = m.result;
+  const oc = computeMatchOutcome(r.home, r.away, r.penaltyWinner || null).outcome;
+  t.outcome = oc === 'win' ? 'victoria' : (oc === 'loss' ? 'derrota' : 'empate');
+  t.scoreLine = `${r.home}-${r.away}`;
+  t.scorers = r.scorers;
+  t.note = r.note;
+  refreshStreaksFromTimeline();
+}
+
+// ---- Agregados por partido (goleadores, cara a cara, temporada) ----
+// sign = +1 al cargar un resultado, -1 para deshacerlo al corregirlo. `meta` ({season, club,
+// rival}) queda guardado en el propio resultado, así la corrección deshace EXACTAMENTE lo que se
+// había sumado (aunque después cambie la temporada, el club o el nombre del rival).
+function applyMatchAggregates(m, res, sign, outcomeKind, meta){
+  const club = meta.club || '';
+  const rivalName = meta.rival || m.rival;
+  const key = outcomeKey(outcomeKind);
+  const sc = state.scorerStats[club] || (state.scorerStats[club] = { total:{} });
+  scorerNames(res).forEach(n => {
+    sc.total[n] = (sc.total[n] || 0) + sign;
+    if(sc.total[n] <= 0) delete sc.total[n];
+  });
+  const byClub = state.h2h[club] || (state.h2h[club] = {});
+  const rec = byClub[rivalName] || (byClub[rivalName] = { w:0, d:0, l:0, gf:0, ga:0, last:[] });
+  rec[key] = Math.max(0, rec[key] + sign);
+  rec.gf = Math.max(0, rec.gf + sign * (res.home || 0));
+  rec.ga = Math.max(0, rec.ga + sign * (res.away || 0));
+  rec.last = (rec.last || []).filter(x => x.matchId !== m.id);
+  if(sign > 0){
+    rec.last.push({ matchId: m.id, date: m.date || '', score: `${res.home}-${res.away}${res.penaltyWinner ? ' (pen.)' : ''}`, o: key, comp: m.comp || '' });
+    if(rec.last.length > 8) rec.last = rec.last.slice(-8);
+  }
+  const inSeason = meta.inSeason !== false && meta.season === seasonLabel() && club === (state.profile.club || '');
+  if(inSeason){
+    const ss = state.seasonStats;
+    ss.results = ss.results.filter(x => x.matchId !== m.id);
+    if(sign > 0){
+      ss.results.push({ matchId: m.id, rival: rivalName, date: m.date || '', comp: m.comp || '', home: res.home, away: res.away, o: key, pen: !!res.penaltyWinner, scorers: scorerNames(res) });
+    }
+  }
+}
+
+// ---- Cara a cara y clásicos ----
+function isClassicRival(name){
+  const n = normName(name);
+  return !!n && ((state.profile && state.profile.classicRivals) || []).some(r => normName(r) === n);
+}
+function h2hFor(rival, club){
+  const byClub = state.h2h && state.h2h[club !== undefined ? club : (state.profile.club || '')];
+  return (byClub && byClub[rival]) || null;
+}
+function h2hTotal(rec){ return rec ? rec.w + rec.d + rec.l : 0; }
+function h2hLabel(rec){
+  if(!h2hTotal(rec)) return 'Sin historial';
+  const diff = rec.w - rec.l;
+  if(diff >= 2) return 'Lo dominás';
+  if(diff <= -2) return 'Bestia negra';
+  return 'Parejo';
+}
+function renderMatchH2H(m){
+  const el = document.getElementById('matchH2HNote');
+  if(!el) return;
+  const classic = isClassicRival(m.rival);
+  const rec = h2hFor(m.rival);
+  if(!classic && !h2hTotal(rec)){ el.style.display = 'none'; el.textContent = ''; return; }
+  el.style.display = 'block';
+  el.textContent = h2hTotal(rec)
+    ? `${classic ? '🔥 Clásico · ' : ''}Historial vs ${m.rival}: ${rec.w}G ${rec.d}E ${rec.l}P (goles ${rec.gf}-${rec.ga}) · ${h2hLabel(rec)}`
+    : `🔥 Clásico · todavía sin historial cargado contra ${m.rival}`;
+}
+
+// ---- Referentes del vestuario ----
+function isLeader(id){ return (state.leaders || []).includes(id); }
+function leaderBoostFor(ev){
+  const ids = ev && ev.playerId ? [ev.playerId] : ((ev && ev.playerIds) || []);
+  return ids.some(isLeader) ? 1.5 : 1;
+}
+function toggleLeader(id){
+  ensureCareerState();
+  const p = state.players.find(x => x.id === id);
+  if(!p) return;
+  if(isLeader(id)){
+    state.leaders = state.leaders.filter(x => x !== id);
+    delete state.leaderState[id];
+    state.eventHistory.unshift({ matchId:null, rival:'', date:'', tag:'VESTUARIO', title:`${p.name} deja de ser referente`, body:`${p.name} ya no es uno de los referentes del vestuario.` });
+  } else {
+    if(state.leaders.length >= MAX_LEADERS){
+      alert(`Ya tenés ${MAX_LEADERS} referentes en el vestuario. Sacale la marca a uno antes de elegir otro.`);
+      return;
+    }
+    state.leaders.push(id);
+    const mood = getPlayerMood(id);
+    state.leaderState[id] = mood <= 30 ? 'unrest' : (mood >= 80 ? 'support' : null);
+    state.eventHistory.unshift({ matchId:null, rival:'', date:'', tag:'VESTUARIO', title:`${p.name} es referente del vestuario`, body:`${p.name} pasa a ser una voz importante del grupo: lo que le pase pesa más en la relación con el plantel, y si se enoja, arrastra a los demás.` });
+  }
+  renderPlayers();
+  renderEventHistory();
+}
+function moodShiftOthers(exceptId, delta){
+  state.players.forEach(pl => {
+    if(pl.id === exceptId) return;
+    state.playerMood[pl.id] = Math.max(0, Math.min(100, getPlayerMood(pl.id) + delta));
+  });
+}
+// Un referente enojado arrastra al grupo; uno contento lo respalda. Cada estado se dispara UNA
+// vez y se rearma recién cuando el ánimo del referente se recupera (no castiga en cada ajuste).
+function checkLeaderMood(id){
+  if(!isLeader(id)) return;
+  const p = state.players.find(x => x.id === id);
+  if(!p) return;
+  const mood = getPlayerMood(id);
+  const ls = state.leaderState[id] || null;
+  if(mood <= 30 && ls !== 'unrest'){
+    state.leaderState[id] = 'unrest';
+    adjustStatRaw('playerRelation', -3);
+    moodShiftOthers(id, -4);
+    state.eventHistory.unshift({ matchId:null, rival:'', date:'', tag:'VESTUARIO', title:`${p.name} está molesto y el vestuario lo siente`, body:`Como referente del grupo, el malestar de ${p.name} contagia al resto del plantel y se resiente la relación con el cuerpo técnico.` });
+    renderEventHistory();
+  } else if(mood >= 45 && ls === 'unrest'){
+    state.leaderState[id] = null;
+  } else if(mood >= 80 && ls !== 'support' && ls !== 'unrest'){
+    state.leaderState[id] = 'support';
+    adjustStatRaw('playerRelation', 2);
+    moodShiftOthers(id, 3);
+    state.eventHistory.unshift({ matchId:null, rival:'', date:'', tag:'VESTUARIO', title:`${p.name} respalda al técnico`, body:`El referente ${p.name} se muestra alineado con tu gestión y eso le da tranquilidad a todo el vestuario.` });
+    renderEventHistory();
+  } else if(mood < 65 && ls === 'support'){
+    state.leaderState[id] = null;
+  }
+}
+// Se va un referente (venta, retiro, liberación): el vestuario lo siente.
+function onPlayerLeft(p){
+  if(!p || !isLeader(p.id)) return;
+  state.leaders = state.leaders.filter(x => x !== p.id);
+  delete state.leaderState[p.id];
+  adjustStatRaw('playerRelation', -3);
+  moodShiftOthers(p.id, -3);
+  state.eventHistory.unshift({ matchId:null, rival:'', date:'', tag:'VESTUARIO', title:`Se va un referente: ${p.name}`, body:`${p.name} era una voz importante del vestuario. Su salida deja un vacío en el grupo y se nota en la relación con el plantel.` });
+}
+
+// ---- Resumen de temporada ----
+function seasonRunMax(results, pred){
+  let best = 0, cur = 0;
+  results.forEach(r => { if(pred(r)){ cur++; if(cur > best) best = cur; } else cur = 0; });
+  return best;
+}
+function buildSeasonSummary(label){
+  ensureCareerState();
+  const ss = state.seasonStats;
+  const res = ss.results || [];
+  const count = k => res.filter(r => r.o === k).length;
+  const gf = res.reduce((a, r) => a + (r.home || 0), 0);
+  const ga = res.reduce((a, r) => a + (r.away || 0), 0);
+  const wins = res.filter(r => r.o === 'w');
+  const losses = res.filter(r => r.o === 'l');
+  const byDiff = (a, b) => Math.abs((b.home - b.away)) - Math.abs((a.home - a.away));
+  const bestWin = wins.slice().sort(byDiff)[0] || null;
+  const worstLoss = losses.slice().sort(byDiff)[0] || null;
+  const scorers = {};
+  res.forEach(r => (r.scorers || []).forEach(n => { scorers[n] = (scorers[n] || 0) + 1; }));
+  const topScorers = Object.entries(scorers).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, goals]) => ({ name, goals }));
+  const trophies = (state.trophies || []).filter(t => t.season === label);
+  const titles = trophies.filter(t => t.trophy && t.met).map(t => t.competition);
+  const objectives = trophies.map(t => ({ competition: t.competition, objective: t.objective, met: !!t.met, position: t.position || '' }));
+  const classics = res.filter(r => isClassicRival(r.rival)).map(r => ({ rival: r.rival, o: r.o, score: `${r.home}-${r.away}${r.pen ? ' (pen.)' : ''}` }));
+  const played = res.length;
+  const won = count('w'), drawn = count('d'), lost = count('l');
+  const pct = played ? Math.round((won / played) * 100) : 0;
+  let verdict;
+  if(titles.length) verdict = '🏆 Temporada de campeón';
+  else if(!played) verdict = 'Temporada sin partidos cargados';
+  else if(pct >= 65) verdict = '🔥 Temporada sobresaliente';
+  else if(pct >= 50) verdict = '👍 Temporada sólida';
+  else if(pct >= 35) verdict = '😐 Temporada irregular';
+  else verdict = '😬 Temporada para el olvido';
+  return {
+    season: label, club: state.profile.club || '', played, won, drawn, lost, gf, ga, pct,
+    titles, objectives, classics, topScorers, bestWin, worstLoss,
+    maxUnbeaten: seasonRunMax(res, r => r.o !== 'l'),
+    maxWins: seasonRunMax(res, r => r.o === 'w'),
+    startBars: ss.startBars || null, endBars: barsSnapshot(), verdict,
+    lastDate: res.length ? (res[res.length - 1].date || '') : ''
+  };
+}
+const BAR_LABELS_SUMMARY = { clubRelation:'Dirigencia', playerRelation:'Plantel', fanRelation:'Afición', pressRelation:'Prensa', personality:'Personalidad', reputation:'Reputación' };
+function seasonSummaryHtml(s){
+  const o = k => ({ w:'G', d:'E', l:'P' }[k] || '');
+  const dot = k => `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:3px;background:${k==='w'?'#3DDC84':(k==='l'?'#FF5C6C':'#FFD166')};"></span>`;
+  const barRows = s.startBars ? Object.keys(BAR_LABELS_SUMMARY).filter(k => s.startBars[k] !== undefined && s.endBars[k] !== undefined).map(k => {
+    const d = s.endBars[k] - s.startBars[k];
+    return `<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;"><span>${BAR_LABELS_SUMMARY[k]}</span><span>${s.startBars[k]} → <b>${s.endBars[k]}</b> ${d===0 ? '' : `<span style="color:${d>0?'#3DDC84':'#FF5C6C'};font-weight:700;">${d>0?'▲ +':'▼ '}${d}</span>`}</span></div>`;
+  }).join('') : '';
+  const objRows = (s.objectives || []).map(x => `<div style="font-size:13px;padding:3px 0;">${x.met ? '✅' : '❌'} ${escHtml(x.competition)} — ${escHtml(x.objective)}${x.position ? ' · ' + escHtml(x.position) : ''}</div>`).join('');
+  const scorerRows = (s.topScorers || []).map((x, i) => `<div style="font-size:13px;padding:2px 0;">${i+1}. ${escHtml(x.name)} <b>${x.goals}</b> gol${x.goals===1?'':'es'}</div>`).join('');
+  const classicRows = (s.classics || []).map(x => `<div style="font-size:13px;padding:2px 0;">${dot(x.o)} vs ${escHtml(x.rival)} ${escHtml(x.score)}</div>`).join('');
+  return `
+    <div style="text-align:center;">
+      <div class="ub-kicker" style="font-family:'Barlow Condensed',sans-serif;letter-spacing:2px;text-transform:uppercase;color:var(--pitch);font-weight:700;">Resumen de temporada ${escHtml(s.season)}</div>
+      <div class="masthead" style="font-size:24px;margin:6px 0;">${escHtml(s.club || 'Tu club')}</div>
+      <div style="font-size:18px;font-weight:700;">${escHtml(s.verdict)}</div>
+    </div>
+    <div style="display:flex;justify-content:space-around;margin:16px 0;text-align:center;font-family:'Archivo Black',sans-serif;">
+      <div><div style="font-size:26px;">${s.played}</div><div class="dateline">PJ</div></div>
+      <div><div style="font-size:26px;color:#3DDC84;">${s.won}</div><div class="dateline">G</div></div>
+      <div><div style="font-size:26px;color:#FFD166;">${s.drawn}</div><div class="dateline">E</div></div>
+      <div><div style="font-size:26px;color:#FF5C6C;">${s.lost}</div><div class="dateline">P</div></div>
+      <div><div style="font-size:26px;">${s.gf}-${s.ga}</div><div class="dateline">Goles</div></div>
+    </div>
+    ${s.titles && s.titles.length ? `<div style="margin:8px 0;"><b>🏆 Títulos:</b> ${s.titles.map(escHtml).join(', ')}</div>` : '<div class="dateline" style="margin:8px 0;">Sin títulos esta temporada.</div>'}
+    ${objRows ? `<div style="margin:12px 0 4px;"><b>Objetivos</b></div>${objRows}` : ''}
+    <div style="margin:12px 0 4px;"><b>Rachas de la temporada</b></div>
+    <div style="font-size:13px;">Invicto más largo: <b>${s.maxUnbeaten}</b> · Victorias seguidas: <b>${s.maxWins}</b></div>
+    ${scorerRows ? `<div style="margin:12px 0 4px;"><b>⚽ Goleadores</b></div>${scorerRows}` : ''}
+    ${s.bestWin ? `<div style="margin:12px 0 2px;font-size:13px;">Mejor victoria: <b>${s.bestWin.home}-${s.bestWin.away}</b> vs ${escHtml(s.bestWin.rival)}</div>` : ''}
+    ${s.worstLoss ? `<div style="font-size:13px;">Peor derrota: <b>${s.worstLoss.home}-${s.worstLoss.away}</b> vs ${escHtml(s.worstLoss.rival)}</div>` : ''}
+    ${classicRows ? `<div style="margin:12px 0 4px;"><b>🔥 Clásicos</b></div>${classicRows}` : ''}
+    ${barRows ? `<div style="margin:12px 0 4px;"><b>Cómo terminaron las barras</b></div>${barRows}` : ''}
+  `;
+}
+function summaryAsText(s){
+  const lines = [`${s.club} — Temporada ${s.season}: ${s.verdict.replace(/^[^A-Za-zÁÉÍÓÚáéíóú]+/, '')}`,
+    `${s.played} PJ · ${s.won}G ${s.drawn}E ${s.lost}P · goles ${s.gf}-${s.ga}`];
+  if(s.titles.length) lines.push('Títulos: ' + s.titles.join(', '));
+  (s.objectives || []).forEach(x => lines.push(`${x.met ? '✔' : '✘'} ${x.competition}: ${x.objective}`));
+  if(s.topScorers.length) lines.push('Goleadores: ' + s.topScorers.map(x => `${x.name} (${x.goals})`).join(', '));
+  lines.push(`Invicto más largo: ${s.maxUnbeaten} · Victorias seguidas: ${s.maxWins}`);
+  return lines.join('\n');
+}
+function openSeasonSummary(s){
+  currentSummaryShown = s;
+  document.getElementById('seasonSummaryBody').innerHTML = seasonSummaryHtml(s);
+  document.getElementById('seasonSummaryModal').style.display = 'flex';
+}
+function maybeShowSeasonSummary(){
+  if(!pendingSeasonSummary) return;
+  const alertEl = document.getElementById('eventAlertModal');
+  const celeb = document.getElementById('celebrationModal');
+  if((alertEl && alertEl.style.display === 'flex') || (celeb && celeb.style.display === 'flex')) return;
+  const s = pendingSeasonSummary;
+  pendingSeasonSummary = null;
+  openSeasonSummary(s);
+}
+function renderSeasonSummaryList(){
+  const list = document.getElementById('seasonSummaryList');
+  if(!list) return;
+  ensureCareerState();
+  const rows = state.seasonSummaries.map((s, i) => `
+    <div class="match-row" style="cursor:default;">
+      <div class="left">
+        <div class="rival">${escHtml(s.club)} · Temporada ${escHtml(s.season)}</div>
+        <div class="when">${s.played} PJ (${s.won}G-${s.drawn}E-${s.lost}P)${s.titles.length ? ' · 🏆 ' + s.titles.map(escHtml).join(', ') : ''}</div>
+      </div>
+      <button class="link-btn" type="button" onclick="openSeasonSummaryAt(${i})">Ver resumen</button>
+    </div>`).join('');
+  list.innerHTML = rows || '<div class="empty-note">Todavía no cerraste ninguna temporada.</div>';
+}
+function openSeasonSummaryAt(i){
+  const s = state.seasonSummaries[i];
+  if(s) openSeasonSummary(s);
+}
+function openLiveSeasonSummary(){
+  openSeasonSummary(buildSeasonSummary(seasonLabel()));
+}
+
+// ---- Clásicos rivales: modal ----
+function classicRivalPool(){
+  const own = state.profile.club || '';
+  const league = state.profile.league;
+  let pool = (league && LEAGUE_DB[league]) ? LEAGUE_DB[league].clubs.filter(c => c !== own) : [];
+  pool = pool.slice().sort((a, b) => a.localeCompare(b, 'es', { sensitivity:'base' }));
+  return pool;
+}
+function renderClassicDraft(){
+  const chips = document.getElementById('classicRivalChips');
+  chips.innerHTML = classicDraft.length ? classicDraft.map((n, i) => `
+    <span class="importance-tag" style="display:inline-flex;align-items:center;gap:6px;">${escHtml(n)}
+      <button type="button" onclick="removeClassicDraft(${i})" style="background:none;border:none;color:inherit;cursor:pointer;font-weight:700;padding:0;font-size:13px;">✕</button>
+    </span>`).join('') : '<span class="dateline">Todavía no elegiste ninguno.</span>';
+}
+function removeClassicDraft(i){ classicDraft.splice(i, 1); renderClassicDraft(); }
+function openClassicRivalModal(){
+  ensureCareerState();
+  classicDraft = (state.profile.classicRivals || []).slice();
+  document.getElementById('classicClubName').textContent = state.profile.club || 'tu club';
+  const pool = classicRivalPool();
+  const sel = document.getElementById('classicRivalSelect');
+  const txt = document.getElementById('classicRivalText');
+  sel.innerHTML = '<option value="">Elegí un rival…</option>' + pool.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('') + '<option value="__otro__">Otro (escribir manualmente)</option>';
+  sel.style.display = pool.length ? 'block' : 'none';
+  txt.style.display = pool.length ? 'none' : 'block';
+  txt.value = '';
+  renderClassicDraft();
+  document.getElementById('classicRivalModal').style.display = 'flex';
+}
+function addClassicDraft(){
+  const sel = document.getElementById('classicRivalSelect');
+  const txt = document.getElementById('classicRivalText');
+  const name = (txt.style.display !== 'none' ? txt.value : sel.value).trim();
+  if(!name || name === '__otro__') return;
+  if(classicDraft.length >= 3){ alert('Podés elegir hasta 3 clásicos rivales.'); return; }
+  if(classicDraft.some(n => normName(n) === normName(name))) return;
+  if(normName(name) === normName(state.profile.club)) return;
+  classicDraft.push(name);
+  txt.value = '';
+  sel.value = '';
+  renderClassicDraft();
+}
+function saveClassicRivals(list){
+  ensureCareerState();
+  state.profile.classicRivals = list.slice();
+  state.profile.classicRivalsAsked = state.profile.club || '';
+  document.getElementById('classicRivalModal').style.display = 'none';
+  renderExtraStats();
+  persist();
+}
+function maybePromptClassicRival(){
+  const p = state.profile;
+  if(!p || !p.club || !p.name) return;
+  if(p.classicRivalsAsked === p.club) return;
+  const m = document.getElementById('classicRivalModal');
+  if(m && m.style.display === 'flex') return;
+  openClassicRivalModal();
+}
+
+// ---- Tarjetas de estadísticas en Perfil ----
+function streakBoxHtml(title, entry, color, negative){
+  const rec = entry.record, cur = entry.current;
+  let dates = 'Todavía sin racha registrada';
+  if(rec.count){
+    dates = (rec.from || rec.to)
+      ? (rec.from === rec.to || !rec.to ? `Logrado el ${formatLongDate(rec.from || rec.to)}` : `Del ${formatLongDate(rec.from)} al ${formatLongDate(rec.to)}`)
+      : 'Fecha no registrada';
+    if(rec.club) dates += ` · ${escHtml(rec.club)}`;
+  }
+  const live = cur.count > 0;
+  return `
+    <div style="flex:1;min-width:150px;">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;letter-spacing:2px;text-transform:uppercase;font-weight:700;color:${color};">${title}</div>
+      <div style="font-family:'Archivo Black',sans-serif;font-size:42px;line-height:1.1;color:${color};">${rec.count || 0}</div>
+      <div class="dateline" style="margin:2px 0 8px;">${dates}</div>
+      <div style="display:inline-block;font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;border:1px solid ${live ? color : 'var(--line)'};color:${live ? color : 'var(--ink-dim)'};">Ahora: ${cur.count || 0}${live && cur.count >= rec.count ? ' · ¡récord en curso!' : ''}</div>
+    </div>`;
+}
+function setExtStatsTab(k){ extStatsTab = k; renderExtraStats(); }
+function renderExtraStats(){
+  ensureCareerState();
+  const club = state.profile.club || '';
+
+  const streaksPanel = `<div style="display:flex;flex-wrap:wrap;gap:22px;">`
+      + streakBoxHtml('Victorias seguidas', state.streaks.win, 'var(--gold)', false)
+      + streakBoxHtml('Peor racha sin ganar', state.streaks.winless, 'var(--alert)', true)
+      + `</div>`;
+  let scorersPanel = '', classicsPanel = '';
+  {
+    const total = Object.entries((state.scorerStats[club] && state.scorerStats[club].total) || {}).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const seasonMap = {};
+    state.seasonStats.results.forEach(r => (r.scorers || []).forEach(n => { seasonMap[n] = (seasonMap[n] || 0) + 1; }));
+    const seasonTop = Object.entries(seasonMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const list = (arr) => {
+      if(!arr.length) return '<div class="dateline">Todavía sin goles cargados.</div>';
+      const max = arr[0][1];
+      return arr.map(([n, g]) => `<div style="margin:6px 0;"><div style="display:flex;justify-content:space-between;font-size:13px;"><span>${escHtml(n)}</span><b>${g}</b></div><div class="bar-track" style="height:6px;"><div class="bar-fill gold" style="width:${Math.round((g / max) * 100)}%;"></div></div></div>`).join('');
+    };
+    const same = JSON.stringify(seasonTop) === JSON.stringify(total);
+    scorersPanel = same
+      ? `<div class="dateline" style="margin-bottom:4px;">Esta temporada y en ${escHtml(club || 'el club')}</div>${list(seasonTop)}`
+      : `<div style="display:flex;flex-wrap:wrap;gap:22px;">
+        <div style="flex:1;min-width:210px;"><div class="dateline" style="margin-bottom:4px;">Esta temporada</div>${list(seasonTop)}</div>
+        <div style="flex:1;min-width:210px;"><div class="dateline" style="margin-bottom:4px;">Histórico en ${escHtml(club || 'el club')}</div>${list(total)}</div>
+      </div>`;
+  }
+  {
+    const rivals = state.profile.classicRivals || [];
+    const rows = rivals.map(r => {
+      const rec = h2hFor(r, club);
+      const label = h2hLabel(rec);
+      const color = label === 'Lo dominás' ? '#3DDC84' : (label === 'Bestia negra' ? '#FF5C6C' : 'var(--ink-dim)');
+      const dots = ((rec && rec.last) || []).slice(-5).map(x => `<span title="${escHtml(x.score)}" style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:3px;background:${x.o==='w'?'#3DDC84':(x.o==='l'?'#FF5C6C':'#FFD166')};"></span>`).join('');
+      return `<div style="padding:10px 0;border-top:1px solid var(--line);">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+          <b>🔥 ${escHtml(r)}</b><span style="font-size:12px;font-weight:700;color:${color};">${label}</span>
+        </div>
+        <div style="font-size:13px;margin-top:4px;">${rec ? `${rec.w}G · ${rec.d}E · ${rec.l}P · goles ${rec.gf}-${rec.ga}` : 'Todavía no jugaron'} <span style="margin-left:8px;">${dots}</span></div>
+      </div>`;
+    }).join('');
+    classicsPanel = `<div style="display:flex;justify-content:flex-end;"><button class="link-btn" type="button" onclick="openClassicRivalModal()">${rivals.length ? 'Cambiar clásicos' : 'Elegir clásicos'}</button></div>
+      ${rows || '<div class="dateline">Todavía no elegiste tus clásicos rivales.</div>'}`;
+  }
+  const tab = ['rachas','goleadores','clasicos'].includes(extStatsTab) ? extStatsTab : 'rachas';
+  const tabBtn = (k, label) => `<button type="button" onclick="setExtStatsTab('${k}')" style="flex:1;padding:8px 6px;border:0;border-radius:10px;cursor:pointer;font-weight:700;font-size:13px;background:${tab===k?'var(--pitch)':'transparent'};color:${tab===k?'#06120d':'var(--ink-dim)'};">${label}</button>`;
+  const sEl = document.getElementById('streaksCard');
+  if(sEl){
+    sEl.innerHTML = `<div class="ext-card"><div class="ext-title">Estadísticas de carrera${club ? ' · ' + escHtml(club) : ''}</div>
+      <div style="display:flex;gap:4px;padding:4px;border-radius:12px;background:rgba(255,255,255,0.04);margin-bottom:14px;">${tabBtn('rachas','🔥 Rachas')}${tabBtn('goleadores','⚽ Goleadores')}${tabBtn('clasicos','⚔️ Clásicos')}</div>
+      <div style="display:${tab==='rachas'?'block':'none'};">${streaksPanel}</div>
+      <div style="display:${tab==='goleadores'?'block':'none'};">${scorersPanel}</div>
+      <div style="display:${tab==='clasicos'?'block':'none'};">${classicsPanel}</div></div>`;
+  }
+  const g2 = document.getElementById('scorersCard'); if(g2) g2.innerHTML = '';
+  const c2 = document.getElementById('classicsCard'); if(c2) c2.innerHTML = '';
+  renderLeadersStrip();
+}
+function renderLeadersStrip(){
+  const el = document.getElementById('leadersStrip');
+  if(!el) return;
+  const names = (state.leaders || []).map(id => state.players.find(p => p.id === id)).filter(Boolean);
+  el.innerHTML = names.length
+    ? `<div class="dateline" style="margin-bottom:8px;">⭐ Referentes del vestuario: <b style="color:var(--ink);">${names.map(p => escHtml(p.name)).join(', ')}</b> (${names.length}/${MAX_LEADERS}). Lo que les pasa pesa más; si se enojan, arrastran al grupo.</div>`
+    : `<div class="dateline" style="margin-bottom:8px;">⭐ Todavía no marcaste referentes. Elegí hasta ${MAX_LEADERS} jugadores con el botón de cada ficha.</div>`;
+}
+
+// ---- Línea de tiempo de la carrera ----
+function yearOfLabel(str){ const m = /(\d{4})/.exec(String(str || '')); return m ? parseInt(m[1], 10) : null; }
+function seasonEndYear(label){
+  const y = yearOfLabel(label);
+  if(y === null) return null;
+  return /\d{4}\s*\/\s*\d{2}/.test(String(label)) ? y + 1 : y;
+}
+function dateSortKey(d){
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || '');
+  return m ? parseInt(m[1], 10) * 10000 + parseInt(m[2], 10) * 100 + parseInt(m[3], 10) : null;
+}
+function logCareer(entry){
+  ensureCareerState();
+  state.careerLog.push(entry);
+}
+function lastPlayedDate(){
+  const tl = state.timeline || [];
+  return tl.length ? (tl[tl.length - 1].date || '') : '';
+}
+function buildCareerTimeline(){
+  ensureCareerState();
+  const items = [];
+  state.careerLog.forEach(e => {
+    items.push({ key: e.sortKey || 0, icon: e.type === 'despido' ? '🚨' : '🤝', title: e.title, sub: e.sub || '' });
+  });
+  (state.careerHistory || []).forEach(c => {
+    const y = yearOfLabel(c.year);
+    const ms = c.matchStats || { played:0, won:0, drawn:0, lost:0, seasons:0, titles:0 };
+    items.push({ key: (y || 0) * 10000 + 9500, icon: '🚪', title: `Salida de ${c.club}`, sub: `Hasta ${c.year || '—'} · ${ms.seasons} temp. · ${ms.titles} títulos · ${ms.played} PJ (${ms.won}G-${ms.drawn}E-${ms.lost}P)` });
+  });
+  (state.trophies || []).forEach(t => {
+    if(!t.trophy || !t.met) return;
+    const dk = dateSortKey(t.date);
+    const ey = seasonEndYear(t.season);
+    items.push({ key: dk || ((ey || 0) * 10000 + 9000), icon: '🏆', title: `Campeón de ${t.competition}`, sub: `Temporada ${t.season}${t.date ? ' · ' + formatLongDate(t.date) : ''}` });
+  });
+  (state.seasonSummaries || []).forEach(s => {
+    const ey = seasonEndYear(s.season);
+    items.push({ key: (ey || 0) * 10000 + 9200, icon: '📅', title: `Temporada ${s.season} cerrada con ${s.club}`, sub: `${s.played} PJ (${s.won}G-${s.drawn}E-${s.lost}P)${s.titles.length ? ' · 🏆 ' + s.titles.join(', ') : ''}` });
+  });
+  const recs = [
+    { rec: state.unbeatenRecord, what: 'partidos sin perder', icon: '🛡️' },
+    { rec: state.streaks.win.record, what: 'victorias consecutivas', icon: '🔥' },
+  ];
+  recs.forEach(r => {
+    if(!r.rec || r.rec.count < 5) return;
+    const k = dateSortKey(r.rec.to || r.rec.from);
+    if(!k) return;
+    items.push({ key: k, icon: r.icon, title: `Récord: ${r.rec.count} ${r.what}`, sub: `${r.rec.from && r.rec.to && r.rec.from !== r.rec.to ? 'Del ' + formatLongDate(r.rec.from) + ' al ' + formatLongDate(r.rec.to) : formatLongDate(r.rec.to || r.rec.from)}${r.rec.club ? ' · ' + r.rec.club : ''}` });
+  });
+  items.sort((a, b) => b.key - a.key);
+  if(state.profile && state.profile.club && !state.firedFlag){
+    items.unshift({ key: Infinity, icon: '📍', title: `Actualidad: dirigís a ${state.profile.club}`, sub: `Temporada ${state.profile.year || '—'}` });
+  }
+  return items;
+}
+function renderCareerTimeline(){
+  const el = document.getElementById('careerTimeline');
+  if(!el) return;
+  const items = buildCareerTimeline();
+  el.innerHTML = items.length ? items.map(it => `
+    <div class="ctl-item"><div class="ctl-dot">${it.icon}</div>
+      <div class="ctl-body"><div class="ctl-title">${escHtml(it.title)}</div><div class="dateline">${escHtml(it.sub)}</div></div></div>`).join('')
+    : '<div class="empty-note">Tu carrera recién empieza.</div>';
+}
+
 function addTimelineEntry(m){
   const club = state.profile.club || 'el club';
   const r = m.result;
@@ -3639,6 +4367,7 @@ function addTimelineEntry(m){
   // Racha en curso y récord histórico: se actualiza ANTES de agregar este partido a la línea de
   // tiempo (así la siembra de cuentas viejas, que lee la línea de tiempo, no lo cuenta dos veces).
   updateUnbeatenRecord(m.date, outcome);
+  updateExtraStreaks(m.date, outcome);
   state.timeline.push({
     matchId: m.id,
     rival: m.rival,
@@ -3657,6 +4386,34 @@ function addTimelineEntry(m){
   if(state.timeline.length > 30) state.timeline = state.timeline.slice(-30);
   renderTimeline();
 }
+
+// ---- Handlers: clásicos rivales y resumen de temporada ----
+document.getElementById('classicRivalSelect').addEventListener('change', () => {
+  const sel = document.getElementById('classicRivalSelect');
+  if(sel.value === '__otro__'){
+    sel.style.display = 'none';
+    const t = document.getElementById('classicRivalText');
+    t.style.display = 'block';
+    t.value = '';
+    t.focus();
+  }
+});
+document.getElementById('classicRivalAddBtn').addEventListener('click', addClassicDraft);
+document.getElementById('classicRivalSaveBtn').addEventListener('click', () => saveClassicRivals(classicDraft));
+document.getElementById('classicRivalNoneBtn').addEventListener('click', () => saveClassicRivals([]));
+document.getElementById('classicRivalLaterBtn').addEventListener('click', () => {
+  document.getElementById('classicRivalModal').style.display = 'none';
+});
+document.getElementById('seasonSummaryCloseBtn').addEventListener('click', () => {
+  document.getElementById('seasonSummaryModal').style.display = 'none';
+});
+document.getElementById('seasonSummaryCopyBtn').addEventListener('click', () => {
+  if(!currentSummaryShown) return;
+  const text = summaryAsText(currentSummaryShown);
+  try{
+    navigator.clipboard.writeText(text).then(() => alert('Resumen copiado.'), () => alert(text));
+  }catch(e){ alert(text); }
+});
 
 function renderTimeline(){
   const list = document.getElementById('timelineList');
@@ -3835,7 +4592,7 @@ const BIG_MATCH_DELTAS = {
 };
 function resultQuestionText(rival, r, isBigMatch){
   const outcome = state._resultOutcome;
-  const scoreLine = `${r.home}-${r.away}`;
+  const scoreLine = `${r.home}-${r.away}` + (r.penaltyWinner ? ' (definido por penales)' : '');
   const bank = isBigMatch ? BIG_MATCH_QUESTIONS : RESULT_QUESTIONS;
   return pick(bank[outcome])(rival, scoreLine);
 }
@@ -4238,6 +4995,130 @@ function transferRumorQuoteOptions(name){
   return ['PICANTE','TRANQUILO','EVASIVO'].map(tag => ({ tag, label: pick(TRANSFER_RUMOR_ANSWERS[tag])(name), ...TRANSFER_RUMOR_DELTAS[tag] }));
 }
 
+// ---- Preguntas de prensa: clásicos, rachas/récords y goleadores (RULEBATCH-29) ----
+const CLASSIC_QUESTIONS = {
+  win: [
+    (rv,rec)=>`¡Se ganó el clásico ante ${rv}! Con este triunfo el historial queda ${rec}. ¿Qué significa para la gente?`,
+    (rv,rec)=>`Ganarle a ${rv} es otra cosa. ¿Cómo se vive un clásico así desde adentro?`,
+    (rv,rec)=>`El clásico con ${rv} era un partido aparte (${rec}). ¿Lo preparó distinto?`,
+  ],
+  loss: [
+    (rv,rec)=>`Perder el clásico ante ${rv} duele (${rec}). ¿Qué le dice a la hinchada?`,
+    (rv,rec)=>`La derrota con ${rv} cae pesado. ¿Cómo se levanta el equipo de un golpe así?`,
+    (rv,rec)=>`Un clásico perdido deja cuentas pendientes con ${rv}. ¿Está a la altura el plantel?`,
+  ],
+  draw: [
+    (rv,rec)=>`Empate en el clásico con ${rv} (${rec}). ¿Sabe a poco o lo da por bueno?`,
+    (rv,rec)=>`Un clásico igualado ante ${rv}. ¿Qué lectura hace del partido?`,
+  ],
+};
+const CLASSIC_ANSWERS = {
+  win: {
+    PICANTE: [ ()=>`"Estos son los partidos que la gente no olvida. Se lo dedicamos a la hinchada, y que el rival tome nota."`, ()=>`"Ganarles a ellos tiene otro sabor. Que se queden con la bronca."` ],
+    TRANQUILO: [ ()=>`"Un clásico es especial, pero seguimos con los pies en la tierra. Fue mérito del grupo."`, ()=>`"Feliz por la gente. Disfrutamos hoy y mañana volvemos a trabajar."` ],
+    EVASIVO: [ ()=>`"Prefiero no hablar del rival, me quedo con lo que hizo mi equipo."`, ()=>`"Fue un partido más en el calendario, aunque sé que para la gente es mucho más."` ],
+  },
+  loss: {
+    PICANTE: [ ()=>`"No hay excusas, pero que nadie se confíe: esto lo vamos a dar vuelta."`, ()=>`"Duele, pero el que me conoce sabe cómo respondo yo a los golpes."` ],
+    TRANQUILO: [ ()=>`"Le pido perdón a la gente. Vamos a trabajar para devolverles una alegría."`, ()=>`"Asumo la responsabilidad. Los clásicos se ganan y se pierden, y toca levantarse."` ],
+    EVASIVO: [ ()=>`"Prefiero analizarlo puertas adentro, no es momento de hablar."`, ()=>`"Ya habrá tiempo para evaluar todo, ahora hay que mirar para adelante."` ],
+  },
+  draw: {
+    PICANTE: [ ()=>`"Nos fuimos con bronca, merecimos más. Y el rival lo sabe."` ],
+    TRANQUILO: [ ()=>`"Un punto en un clásico siempre cuenta. Seguimos sumando."` ],
+    EVASIVO: [ ()=>`"Fue parejo, no me quiero meter en más detalles."` ],
+  },
+};
+const CLASSIC_DELTAS = {
+  win:  { PICANTE:{dPersonality:+9,dClub:-1,dFan:+10,dPress:-6,dMood:0}, TRANQUILO:{dPersonality:-4,dClub:+5,dFan:+5,dPress:+7,dMood:+3}, EVASIVO:{dPersonality:-1,dClub:+1,dFan:+1,dPress:-2,dMood:0} },
+  loss: { PICANTE:{dPersonality:+8,dClub:-7,dFan:-2,dPress:-8,dMood:-4}, TRANQUILO:{dPersonality:-5,dClub:+5,dFan:-3,dPress:+7,dMood:+2}, EVASIVO:{dPersonality:-2,dClub:0,dFan:-4,dPress:-3,dMood:0} },
+  draw: { PICANTE:{dPersonality:+6,dClub:-3,dFan:+2,dPress:-5,dMood:-1}, TRANQUILO:{dPersonality:-3,dClub:+3,dFan:0,dPress:+5,dMood:+2}, EVASIVO:{dPersonality:-1,dClub:+1,dFan:-1,dPress:-2,dMood:0} },
+};
+function classicPressEntry(playedMatch, outcome){
+  if(!isClassicRival(playedMatch.rival)) return null;
+  const rec = h2hFor(playedMatch.rival);
+  const recText = rec ? `${rec.w}G-${rec.d}E-${rec.l}P` : 'recién empieza';
+  const k = outcome === 'win' ? 'win' : (outcome === 'loss' ? 'loss' : 'draw');
+  return {
+    text: pick(CLASSIC_QUESTIONS[k])(playedMatch.rival, recText), playerId:null,
+    options: ['PICANTE','TRANQUILO','EVASIVO'].map(tag => ({ tag, label: pick(CLASSIC_ANSWERS[k][tag])(), ...CLASSIC_DELTAS[k][tag] }))
+  };
+}
+
+const STREAK_GOOD_QUESTIONS = [
+  (n,what)=>`Ya van ${n} ${what}. ¿Hasta dónde puede llegar este equipo?`,
+  (n,what)=>`${n} ${what}: ¿cuál es el secreto de este momento?`,
+  (n,what)=>`Con ${n} ${what}, ¿siente que el equipo está en su mejor versión?`,
+];
+const STREAK_BAD_QUESTIONS = [
+  (n)=>`Van ${n} partidos sin ganar. ¿Qué está pasando con el equipo?`,
+  (n)=>`${n} partidos sin victorias empiezan a pesar. ¿Cómo lo vive?`,
+  (n)=>`La racha de ${n} partidos sin ganar preocupa. ¿Qué cambiaría?`,
+];
+const RECORD_QUESTIONS = [
+  (n,what)=>`¡Récord! ${n} ${what} es lo más largo de su ciclo. ¿Qué siente al romper la marca?`,
+  (n,what)=>`Está haciendo historia: ${n} ${what}. ¿Se lo dedica a alguien?`,
+];
+const STREAK_GOOD_ANSWERS = {
+  PICANTE: [ ()=>`"Esto recién empieza. Que nadie se confíe, porque vamos por todo."`, ()=>`"Los números hablan solos. Que sigan dudando de nosotros si quieren."` ],
+  TRANQUILO: [ ()=>`"Es mérito de los jugadores. Seguimos partido a partido, sin mirar demasiado la racha."`, ()=>`"Trabajo, humildad y compromiso. Eso sostiene los buenos momentos."` ],
+  EVASIVO: [ ()=>`"No hablo de rachas, el próximo partido es lo único que importa."`, ()=>`"Prefiero no ponerle nombre a esto, cada partido es un mundo."` ],
+};
+const STREAK_GOOD_DELTAS = { PICANTE:{dPersonality:+7,dClub:+1,dFan:+7,dPress:-4,dMood:0}, TRANQUILO:{dPersonality:-3,dClub:+5,dFan:+4,dPress:+6,dMood:+3}, EVASIVO:{dPersonality:-1,dClub:+1,dFan:0,dPress:-1,dMood:0} };
+const STREAK_BAD_ANSWERS = {
+  PICANTE: [ ()=>`"Las rachas se cortan solas. No pienso cambiar nada por la presión de afuera."`, ()=>`"Críticas hay siempre, pero adentro estamos unidos."` ],
+  TRANQUILO: [ ()=>`"Sé que estamos en deuda y vamos a trabajar el doble para revertirlo."`, ()=>`"Asumo mi parte. Hay que corregir detalles y volver a ganar."` ],
+  EVASIVO: [ ()=>`"No voy a hablar de números, prefiero enfocarme en lo que viene."`, ()=>`"Eso se analiza puertas adentro, con el plantel."` ],
+};
+const STREAK_BAD_DELTAS = { PICANTE:{dPersonality:+8,dClub:-5,dFan:-4,dPress:-6,dMood:0}, TRANQUILO:{dPersonality:-4,dClub:+4,dFan:+3,dPress:+6,dMood:+2}, EVASIVO:{dPersonality:-2,dClub:0,dFan:-2,dPress:-3,dMood:0} };
+function streakPressEntry(){
+  ensureCareerState();
+  normalizeUnbeaten();
+  const w = state.streaks.win, wl = state.streaks.winless, ub = state.currentUnbeaten;
+  let text = null, good = true, guaranteed = false;
+  if(pendingRecordBroken){
+    const what = pendingRecordBroken.type === 'unbeaten' ? 'partidos sin perder' : 'victorias consecutivas';
+    text = pick(RECORD_QUESTIONS)(pendingRecordBroken.count, what);
+    guaranteed = true;
+  } else if(w.current.count >= 3){
+    text = pick(STREAK_GOOD_QUESTIONS)(w.current.count, 'victorias consecutivas');
+  } else if(ub.count >= 6){
+    text = pick(STREAK_GOOD_QUESTIONS)(ub.count, 'partidos sin perder');
+  } else if(wl.current.count >= 4){
+    text = pick(STREAK_BAD_QUESTIONS)(wl.current.count);
+    good = false;
+  }
+  if(!text) return null;
+  const answers = good ? STREAK_GOOD_ANSWERS : STREAK_BAD_ANSWERS;
+  const deltas = good ? STREAK_GOOD_DELTAS : STREAK_BAD_DELTAS;
+  return { text, playerId:null, _streakGuaranteed: guaranteed,
+    options: ['PICANTE','TRANQUILO','EVASIVO'].map(tag => ({ tag, label: pick(answers[tag])(), ...deltas[tag] })) };
+}
+
+const SCORER_RACE_QUESTIONS = [
+  (n,g)=>`${n} ya lleva ${g} goles en la temporada. ¿Es el goleador que necesitaba el equipo?`,
+  (n,g)=>`Con ${g} goles, ${n} lidera la tabla de artilleros del equipo. ¿Lo ve peleando por el título de goleador?`,
+  (n,g)=>`${n} está encendido: ${g} goles. ¿Cuál es el secreto de su momento?`,
+];
+const SCORER_RACE_ANSWERS = {
+  PICANTE: [ (n)=>`"${n} es el mejor 9 que hay, y lo digo sin que me importe lo que opine el resto."` ],
+  TRANQUILO: [ (n)=>`"${n} trabaja muchísimo y los goles son la consecuencia. Está muy bien acompañado por el grupo."` ],
+  EVASIVO: [ ()=>`"Prefiero no individualizar, el equipo es el que gana los partidos."` ],
+};
+const SCORER_RACE_DELTAS = { PICANTE:{dPersonality:+6,dClub:0,dFan:+5,dPress:-3,dMood:+4}, TRANQUILO:{dPersonality:-2,dClub:+3,dFan:+3,dPress:+5,dMood:+5}, EVASIVO:{dPersonality:-1,dClub:+1,dFan:0,dPress:-1,dMood:-1} };
+function scorerPressEntry(playedMatch){
+  ensureCareerState();
+  const tally = {};
+  state.seasonStats.results.forEach(r => (r.scorers || []).forEach(n => { tally[n] = (tally[n] || 0) + 1; }));
+  const top = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
+  if(!top || top[1] < 3) return null;
+  const scoredToday = scorerNames(playedMatch.result);
+  if(!scoredToday.includes(top[0])) return null;
+  const [name, goals] = top;
+  return { text: pick(SCORER_RACE_QUESTIONS)(name, goals), playerId:null,
+    options: ['PICANTE','TRANQUILO','EVASIVO'].map(tag => ({ tag, label: pick(SCORER_RACE_ANSWERS[tag])(name), ...SCORER_RACE_DELTAS[tag] })) };
+}
+
 function showPressConference(playedMatch){
   document.getElementById('matchPreEvent').style.display = 'none';
   document.getElementById('matchResultForm').style.display = 'none';
@@ -4246,7 +5127,11 @@ function showPressConference(playedMatch){
 
   const club = state.profile.club || 'el club';
   const r = playedMatch.result;
-  state._resultOutcome = r.home > r.away ? 'win' : (r.home < r.away ? 'loss' : 'draw');
+  // Bug real reportado por el usuario: si el partido se definió por penales, la prensa preguntaba
+  // como si hubiera sido empate. Se usa la misma clasificación que el guardado del resultado
+  // (computeMatchOutcome): ganar/perder los penales = victoria/derrota.
+  const _oc = computeMatchOutcome(r.home, r.away, r.penaltyWinner || null).outcome;
+  state._resultOutcome = _oc === 'win' ? 'win' : (_oc === 'loss' ? 'loss' : 'draw');
   const nextMatch = getNextMatch(playedMatch.id);
   const infoPlayed = playedMatch.importance ? importanceInfo(playedMatch.comp, playedMatch.importance) : null;
   const wasBigMatch = infoPlayed && infoPlayed.mult >= 1.6;
@@ -4259,6 +5144,14 @@ function showPressConference(playedMatch){
   // aleatoria para que no se repita siempre el mismo orden ni las mismas preguntas.
   const pool = [];
   pool.push({ text: resultQuestionText(playedMatch.rival, r, wasBigMatch), playerId:null, options: resultQuoteOptions(playedMatch.rival, wasBigMatch) });
+
+  // RULEBATCH-29: clásico (si el rival es uno de tus clásicos), racha/récord y carrera goleadora.
+  const classicQ = classicPressEntry(playedMatch, state._resultOutcome);
+  if(classicQ) pool.push({ ...classicQ, _extraGuaranteed: true });
+  const streakQ = streakPressEntry();
+  if(streakQ) pool.push({ ...streakQ, _extraGuaranteed: !!streakQ._streakGuaranteed });
+  const scorerQ = Math.random() < 0.7 ? scorerPressEntry(playedMatch) : null;
+  if(scorerQ) pool.push(scorerQ);
 
   // Pedido del usuario: "cuando juego una final o semi... que te ponga preguntas super buenas y
   // relacionadas a eso". Si este partido decidió una serie/llave de final o semifinal (ver
@@ -4304,9 +5197,9 @@ function showPressConference(playedMatch){
     }
   }
 
-  if(r.home < r.away){
+  if(state._resultOutcome === 'loss'){
     pool.push({ text: pick(FAN_PATIENCE_QUESTIONS)(), playerId:null, options: fanPatienceQuoteOptions() });
-  } else if(r.home > r.away){
+  } else if(state._resultOutcome === 'win'){
     if(Math.random() < 0.5){
       pool.push({ text: pick(SEASON_GOAL_QUESTIONS)(state.profile.goal || 'los objetivos planteados'), playerId:null, options: seasonGoalQuoteOptions() });
     } else {
@@ -4340,8 +5233,9 @@ function showPressConference(playedMatch){
   const first = pool.shift();
   const guaranteedIdx = pool.findIndex(q => q._guaranteed);
   const guaranteed = guaranteedIdx !== -1 ? pool.splice(guaranteedIdx, 1)[0] : null;
-  const shuffled = pool.sort(()=>Math.random()-0.5);
-  const rest = guaranteed ? [guaranteed, ...shuffled] : shuffled;
+  const extras = pool.filter(q => q._extraGuaranteed);
+  const shuffled = pool.filter(q => !q._extraGuaranteed).sort(()=>Math.random()-0.5);
+  const rest = [...(guaranteed ? [guaranteed] : []), ...extras, ...shuffled];
   const questions = [first, ...rest].slice(0, 4).filter(Boolean);
 
   state.currentPress = { questions, answered: new Array(questions.length).fill(false) };
@@ -5449,6 +6343,7 @@ function decideMetaOutcome(key){
     const p = state.players.find(x=>x.id===ev.playerId);
     if(p){
       state.players = state.players.filter(x=>x.id!==ev.playerId);
+      onPlayerLeft(p);
       state.eventHistory.unshift({ matchId:null, rival:'', date:'', tag:'MERCADO', title:`Venta de ${p.name}`, body:`${p.name} fue transferido tras la oferta que la dirigencia decidió aceptar.` });
       renderPlayers();
     }
@@ -5560,6 +6455,7 @@ function showEventAlert(ev){
 }
 function closeEventAlert(){
   document.getElementById('eventAlertModal').style.display = 'none';
+  maybeShowSeasonSummary();
 }
 function decideOutcomeFromAlert(key){
   decideOutcome(key);
@@ -6124,7 +7020,9 @@ function decideOutcome(key){
   // Lo que le pasa a un ídolo o a una figura repercute mucho más en el club que lo mismo
   // pasándole a una promesa o a un jugador habitual del plantel.
   const tierMult = ev.playerId ? getTierImpact(ev.playerId) : 1;
-  Object.entries(o.effects || {}).forEach(([stat,delta]) => adjustStat(stat, delta*tierMult));
+  // Referentes del vestuario: lo que les pasa pesa más en la relación con el plantel.
+  const leaderBoost = leaderBoostFor(ev);
+  Object.entries(o.effects || {}).forEach(([stat,delta]) => adjustStat(stat, delta*tierMult*(stat === 'playerRelation' ? leaderBoost : 1)));
   if(o.mood !== undefined && ev.playerId) adjustPlayerMood(ev.playerId, o.mood);
   if(o.moodBoth !== undefined && ev.playerIds) ev.playerIds.forEach(pid => adjustPlayerMood(pid, o.moodBoth));
   if(o.moodSplit && ev.playerIds){
@@ -6157,6 +7055,7 @@ function decideOutcome(key){
     const p = state.players.find(x=>x.id===ev.playerId);
     if(p){
       state.players = state.players.filter(x=>x.id!==ev.playerId);
+      onPlayerLeft(p);
       state.eventHistory.unshift({ matchId:null, rival:'', date:'', tag:'MERCADO', title:`Venta de ${p.name}`, body:`${p.name} fue transferido tras la oferta que la dirigencia decidió aceptar.` });
       renderPlayers();
     }
@@ -6332,7 +7231,7 @@ function formatObjectiveResult(comp, raw){
 // trofeo/registro en el Palmarés y mueve las barras. `midSeason: true` es para cuando se
 // registra ANTES del cierre de temporada (objetivo cumplido/definido a mitad de camino);
 // devuelve true si lo registrado fue un título ganado (para disparar el festejo).
-function applyObjectiveOutcome(comp, objective, priority, met, result, midSeason){
+function applyObjectiveOutcome(comp, objective, priority, met, result, midSeason, dateStr){
   const club = state.profile.club || 'el club';
   // `result` llega crudo (fase de copa, posición numérica de liga, o texto libre de amistosos);
   // `display` es la versión legible que se guarda para mostrar en Palmarés/historial. La
@@ -6352,7 +7251,8 @@ function applyObjectiveOutcome(comp, objective, priority, met, result, midSeason
     trophy: (met && objective === 'Ganar el título') ? display : '',
     position: display,
     resultRaw: result,
-    midSeason: !!midSeason
+    midSeason: !!midSeason,
+    date: dateStr || ''
   });
 
   let wonTitle = false;
@@ -6589,6 +7489,14 @@ document.getElementById('closeSeasonBtn').addEventListener('click', () => {
     if(wonTitle) titlesWonThisClose.push(comp);
   });
 
+  // RULEBATCH-29: resumen de la temporada que se cierra (antes de avanzar el año), archivado.
+  ensureCareerState();
+  const closedSummary = buildSeasonSummary(seasonLabel());
+  if(closedSummary.played > 0 || closedSummary.objectives.length){
+    state.seasonSummaries.unshift(closedSummary);
+    pendingSeasonSummary = closedSummary;
+  }
+
   state.stintStats.seasons += 1;
   state.profile.objectivesLocked = false;
   // Arranca en blanco el registro de "ya evaluado a mitad de temporada" para la nueva temporada.
@@ -6604,6 +7512,7 @@ document.getElementById('closeSeasonBtn').addEventListener('click', () => {
     }
   }
   if(state.season) state.season.year = state.profile.year;
+  state.seasonStats = newSeasonStats();
   document.getElementById('dtYear').value = state.profile.year || '';
   updateClubOptions();
   renderProfile();
@@ -6619,6 +7528,9 @@ document.getElementById('closeSeasonBtn').addEventListener('click', () => {
   if(titlesWonThisClose.length > 0 && document.getElementById('eventAlertModal').style.display !== 'flex'){
     showTitleCelebration(titlesWonThisClose.join(' y '));
   }
+  maybeShowSeasonSummary();
+  renderSeasonSummaryList();
+  renderCareerTimeline();
 });
 
 // Índice del trofeo que se está editando en este momento (null = ninguno). Editar un trofeo ya
@@ -6670,6 +7582,8 @@ function saveManualTrophy(){
 }
 
 function renderTrophies(){
+  renderSeasonSummaryList();
+  renderCareerTimeline();
   const list = document.getElementById('trophyList');
   const empty = document.getElementById('trophyEmpty');
   if(!list || !empty) return;
@@ -6784,6 +7698,7 @@ function showTitleCelebration(compName){
 }
 document.getElementById('celebrationCloseBtn').addEventListener('click', () => {
   document.getElementById('celebrationModal').style.display = 'none';
+  maybeShowSeasonSummary();
 });
 
 function renderTrophyCabinet(){
@@ -6834,6 +7749,7 @@ document.getElementById('changeClubBtn').addEventListener('click', () => {
     farewell = `Te vas de ${oldClub} en buenos términos, sin pena ni gloria. No se descarta un regreso más adelante.`;
   }
 
+  const exitKeyForLog = (yearOfLabel(state.profile.year) || 0) * 10000 + 9500;
   state.careerHistory.unshift({
     club: oldClub,
     year: state.profile.year || '—',
@@ -6846,7 +7762,7 @@ document.getElementById('changeClubBtn').addEventListener('click', () => {
   state.eventHistory.unshift({ matchId:null, rival:'', date:'', tag:'CAMBIO DE CLUB', title:`Salida de ${oldClub}`, body: farewell });
 
   // Nuevo club: se resetean plantel y calendario, las barras arrancan en punto medio salvo la personalidad que se mantiene.
-  state.profile = { name: state.profile.name, club: newClub, year: newYear, goal: '', photo: state.profile.photo, league:'', competitions:[], competitionObjectives:{}, competitionPriority:{}, objectivesLocked:false, competitionNotPlayed:{}, competitionResolvedThisSeason:{} };
+  state.profile = { name: state.profile.name, club: newClub, year: newYear, goal: '', photo: state.profile.photo, league:'', competitions:[], competitionObjectives:{}, competitionPriority:{}, objectivesLocked:false, competitionNotPlayed:{}, competitionResolvedThisSeason:{}, classicRivals:[], classicRivalsAsked:'', loggedClub:newClub };
   state.stats = { personality: state.stats.personality, clubRelation:50, playerRelation:50, fanRelation:50, pressRelation:50 };
   state.players = [];
   state.matches = [];
@@ -6873,6 +7789,14 @@ document.getElementById('changeClubBtn').addEventListener('click', () => {
   state.crisisFired = false;
   state.season = { year:'', objective:'' };
   state.consecutiveLosses = 0;
+  // RULEBATCH-29: arranque limpio de lo que es "de este club" (el historial por club se conserva).
+  ensureCareerState();
+  state.seasonStats = newSeasonStats();
+  state.leaders = [];
+  state.leaderState = {};
+  state.streaks.win.current = { count:0, from:'', to:'' };
+  state.streaks.winless.current = { count:0, from:'', to:'' };
+  logCareer({ type:'asuncion', club:newClub, title:`Asumís en ${newClub}`, sub:`Temporada ${newYear || '—'}`, sortKey: Math.max((yearOfLabel(newYear) || 0) * 10000 + 101, exitKeyForLog + 1) });
   state.stintStats = { played:0, won:0, drawn:0, lost:0, seasons:0, titles:0 };
   state.coachStability = { cooldown:0, threatWarned:false, pressureFlags:{}, warnFlags:{} };
   state.firedFlag = false;
@@ -6905,6 +7829,8 @@ document.getElementById('changeClubBtn').addEventListener('click', () => {
   renderEventHistory();
   renderTimeline();
   renderCareer();
+  renderCareerTimeline();
+  renderExtraStats();
 });
 
 // Pedido del usuario: "que todo se pueda editar y borrar por si suceden bugs". El historial de
@@ -6914,6 +7840,7 @@ document.getElementById('changeClubBtn').addEventListener('click', () => {
 // (nombre del club, año) o eliminar directamente.
 let editingCareerIdx = null;
 function renderCareer(){
+  renderCareerTimeline();
   const list = document.getElementById('careerList');
   const empty = document.getElementById('careerEmpty');
   if(state.careerHistory.length === 0){
@@ -7340,6 +8267,7 @@ function startApp(user, pin, loadedData){
     switchTab('perfil');
   }
   if(!loadedData) persist();
+  else if(onboardingRequirementsMet()) setTimeout(maybePromptClassicRival, 400);
 }
 
 document.getElementById('loginBtn').addEventListener('click', async () => {
