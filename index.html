@@ -623,6 +623,7 @@
     HAS MUERTO.
   </div>
   <button class="btn" id="deathScreenBtn" style="margin-top:40px;">Toca para volver al menú principal</button>
+  <button class="btn ghost" id="deathReviveBtn" style="margin-top:14px;">↩️ Revivir a mi DT y recuperar mi perfil</button>
 </div>
 
 <div id="classicRivalModal" class="modal-overlay" style="display:none;">
@@ -774,6 +775,8 @@
 
   <div id="cloudSyncFailBanner" style="display:none; background:#2a2410; border:1px solid #a68b1f; color:#f0d878; padding:10px 14px; border-radius:10px; margin-bottom:14px; font-family:'Barlow Condensed', sans-serif; font-size:14px; line-height:1.4;">
     ☁️ No se pudo sincronizar tu partida con la nube (puede ser falta de conexión). Se guardó localmente igual; cuando tengas señal se sincroniza sola.
+    <span id="cloudSyncDetail" style="opacity:.7; font-size:12px; display:block; margin-top:2px;"></span>
+    <button type="button" class="link-btn" id="cloudSyncDismiss" style="margin-top:4px;">Ocultar este aviso</button>
   </div>
 
   <!-- Bug real reportado por el usuario: "cada tanto me vuelve a aparecer que dirigí un club que
@@ -1327,7 +1330,7 @@
 // una esquina fija de la pantalla (#buildBadge) además de en el header de adentro del juego
 // (#headerBuildLine), para poder confirmar sin dudas si dos dispositivos están corriendo el
 // mismo archivo. Para la próxima entrega, alcanza con cambiar este único string.
-const BUILD_ID = 'RULEBATCH-30';
+const BUILD_ID = 'RULEBATCH-32';
 document.getElementById('buildBadge').textContent = BUILD_ID;
 const headerBuildLineEl = document.getElementById('headerBuildLine');
 if(headerBuildLineEl) headerBuildLineEl.textContent = `build ${BUILD_ID}`;
@@ -1717,6 +1720,19 @@ function computeMatchOutcome(home, away, penaltyWinner){
   return { outcome:'draw', effects: GOAL_DIFF_DRAW, viaPenalties:false };
 }
 
+// Para estadísticas, historial, rachas e invicto un partido igualado en el marcador es EMPATE,
+// aunque se haya definido por penales (como en la vida real). Ganar o perder los penales solo
+// pesa para pasar de fase (bonus de la serie), la prensa y el efecto emocional en las barras.
+function statKindOf(home, away){
+  return home > away ? 'win' : (home < away ? 'loss' : 'draw');
+}
+// Cómo quedó contado un resultado ya guardado en las estadísticas. Los resultados guardados antes
+// de este cambio no tienen `kind` y se contaron según penales (se deshacen igual que se sumaron).
+function aggKindFor(res){
+  if(res && res.aggMeta && res.aggMeta.kind) return res.aggMeta.kind;
+  return computeMatchOutcome(res.home, res.away, res.penaltyWinner || null).outcome;
+}
+
 function importanceInfo(comp, value){
   const kind = competitionKind(comp);
   const opts = IMPORTANCE_OPTIONS[kind];
@@ -1857,7 +1873,7 @@ let currentScorers = [];
 let extStatsTab = 'rachas';
 // Estado suelto de las funciones de carrera (RULEBATCH-29)
 let pendingRecordBroken = null; // { type, count } del último partido guardado (para la prensa)
-const MAX_LEADERS = 3;
+const MAX_LEADERS = 5;
 let currentSummaryShown = null;
 let pendingSeasonSummary = null;
 let classicDraft = [];
@@ -3028,8 +3044,7 @@ function deleteMatch(id){
   // RULEBATCH-29: si el partido tenía resultado, se deshacen también goleadores, cara a cara y
   // resumen de temporada (exactamente lo que había sumado, según aggMeta).
   if(m.result && m.result.aggMeta){
-    const oc = computeMatchOutcome(m.result.home, m.result.away, m.result.penaltyWinner || null).outcome;
-    applyMatchAggregates(m, m.result, -1, oc, m.result.aggMeta);
+    applyMatchAggregates(m, m.result, -1, aggKindFor(m.result), m.result.aggMeta);
   }
   state.matches.splice(idx, 1);
   if(activeMatchId === id){
@@ -3383,14 +3398,15 @@ document.getElementById('saveResult').addEventListener('click', () => {
 
   if(isEdit){
     const oldOutcome = computeMatchOutcome(oldResult.home, oldResult.away, oldResult.penaltyWinner || null);
+    const oldStatKind = aggKindFor(oldResult);
     // Deshace goleadores / cara a cara / resultados de la temporada que había sumado este resultado.
-    if(oldResult.aggMeta) applyMatchAggregates(m, oldResult, -1, oldOutcome.outcome, oldResult.aggMeta);
+    if(oldResult.aggMeta) applyMatchAggregates(m, oldResult, -1, oldStatKind, oldResult.aggMeta);
     Object.entries(oldOutcome.effects).forEach(([stat, val]) => { if(val !== 0) adjustStatRaw(stat, -val * effectiveMult); });
-    if(oldOutcome.outcome === 'win'){
+    if(oldStatKind === 'win'){
       state.stintStats.won = Math.max(0, state.stintStats.won - 1);
       state.stintStats.played = Math.max(0, state.stintStats.played - 1);
       state.reputation -= Math.round(3*effectiveMult);
-    } else if(oldOutcome.outcome === 'loss'){
+    } else if(oldStatKind === 'loss'){
       state.stintStats.lost = Math.max(0, state.stintStats.lost - 1);
       state.stintStats.played = Math.max(0, state.stintStats.played - 1);
       state.reputation += Math.round(3*effectiveMult);
@@ -3451,22 +3467,36 @@ document.getElementById('saveResult').addEventListener('click', () => {
     }
   }
   ensureCareerState();
+  const statKind = statKindOf(home, away);
   const aggMeta = (isEdit && oldResult.aggMeta) ? oldResult.aggMeta : { season: seasonLabel(), club: state.profile.club || '', rival: m.rival };
+  aggMeta.kind = statKind;
   m.result = { home, away, scorers: scorersNames.join(', '), note: document.getElementById('matchNote').value.trim(), penaltyWinner, aggMeta };
   m.status = 'jugado';
   const isBigMatch = mult >= 1.6;
   const outcome = computeMatchOutcome(home, away, penaltyWinner);
-  applyMatchAggregates(m, m.result, 1, outcome.outcome, aggMeta);
+  applyMatchAggregates(m, m.result, 1, statKind, aggMeta);
 
   Object.entries(outcome.effects).forEach(([stat, val]) => {
     if(val !== 0) adjustStatRaw(stat, val * effectiveMult);
   });
 
-  if(outcome.outcome === 'win'){
+  // Conteo de estadísticas: por marcador (un empate definido por penales es empate).
+  if(statKind === 'win'){
     state.consecutiveLosses = 0;
     state.stintStats.played += 1;
     state.stintStats.won += 1;
     state.reputation += Math.round(3*effectiveMult);
+  } else if(statKind === 'loss'){
+    state.consecutiveLosses = (state.consecutiveLosses || 0) + 1;
+    state.stintStats.played += 1;
+    state.stintStats.lost += 1;
+    state.reputation -= Math.round(3*effectiveMult);
+  } else {
+    state.consecutiveLosses = 0;
+    state.stintStats.played += 1;
+    state.stintStats.drawn += 1;
+  }
+  if(outcome.outcome === 'win'){
     if(isBigMatch && !isEdit){
       state.eventHistory.unshift({
         matchId: m.id, rival: m.rival, date: m.date,
@@ -3476,10 +3506,6 @@ document.getElementById('saveResult').addEventListener('click', () => {
       });
     }
   } else if(outcome.outcome === 'loss'){
-    state.consecutiveLosses = (state.consecutiveLosses || 0) + 1;
-    state.stintStats.played += 1;
-    state.stintStats.lost += 1;
-    state.reputation -= Math.round(3*effectiveMult);
     if(isBigMatch && !isEdit){
       state.eventHistory.unshift({
         matchId: m.id, rival: m.rival, date: m.date,
@@ -3495,10 +3521,6 @@ document.getElementById('saveResult').addEventListener('click', () => {
         body:`Tras la derrota frente a ${m.rival}, un sector de la tribuna te silbó al retirarte al vestuario.`
       });
     }
-  } else {
-    state.consecutiveLosses = 0;
-    state.stintStats.played += 1;
-    state.stintStats.drawn += 1;
   }
 
   // Pedido del usuario: "a medida que avanzan las series... todo repercuta a más. Si gano mejor
@@ -3822,9 +3844,46 @@ function ensureCareerState(){
   if(!state.leaderState || typeof state.leaderState !== 'object') state.leaderState = {};
   if(state.profile && !Array.isArray(state.profile.classicRivals)) state.profile.classicRivals = [];
   if(state.profile && typeof state.profile.superClassic !== 'string') state.profile.superClassic = '';
+  migratePenaltyStats();
   if(!state.careerSeeded){
     state.careerSeeded = true;
     seedCareerStateFromHistory();
+  }
+}
+
+// Una sola vez por partida: los partidos igualados que se definieron por penales pasan a contar
+// como EMPATE en el historial (PJ/G/E/P), la línea de tiempo, el cara a cara y las rachas (antes
+// contaban como victoria/derrota y, por ejemplo, cortaban el invicto).
+function migratePenaltyStats(){
+  if(state.penaltyStatsFixed) return;
+  state.penaltyStatsFixed = true;
+  let touched = false;
+  (state.matches || []).forEach(m => {
+    const r = m.result;
+    if(m.status !== 'jugado' || !r || r.home !== r.away || !r.penaltyWinner) return;
+    const meta = r.aggMeta;
+    const oldKind = (meta && meta.kind) ? meta.kind : (r.penaltyWinner === 'home' ? 'win' : 'loss');
+    if(oldKind === 'draw') return;
+    const t = (state.timeline || []).find(x => x.matchId === m.id);
+    if(t && t.outcome !== 'empate'){
+      t.outcome = 'empate';
+      touched = true;
+      if(state.stintStats){
+        if(oldKind === 'win') state.stintStats.won = Math.max(0, state.stintStats.won - 1);
+        else state.stintStats.lost = Math.max(0, state.stintStats.lost - 1);
+        state.stintStats.drawn += 1;
+      }
+    }
+    if(meta){
+      applyMatchAggregates(m, r, -1, oldKind, meta);
+      meta.kind = 'draw';
+      applyMatchAggregates(m, r, 1, 'draw', meta);
+    }
+  });
+  if(touched){
+    const tl = state.timeline || [];
+    state.consecutiveLosses = trailingRun(tl, t => t.outcome === 'derrota');
+    refreshStreaksFromTimeline();
   }
 }
 
@@ -3839,8 +3898,8 @@ function seedCareerStateFromHistory(){
   const firstSeason = !(state.stintStats && state.stintStats.seasons > 0);
   (state.matches || []).forEach(m => {
     if(m.status !== 'jugado' || !m.result || m.result.aggMeta) return;
-    const oc = computeMatchOutcome(m.result.home, m.result.away, m.result.penaltyWinner || null).outcome;
-    m.result.aggMeta = { season: seasonLabel(), club, rival: m.rival, inSeason: firstSeason };
+    const oc = statKindOf(m.result.home, m.result.away);
+    m.result.aggMeta = { season: seasonLabel(), club, rival: m.rival, inSeason: firstSeason, kind: oc };
     applyMatchAggregates(m, m.result, 1, oc, m.result.aggMeta);
   });
 }
@@ -3911,7 +3970,7 @@ function updateTimelineEntryForEdit(m){
   const t = (state.timeline || []).find(x => x.matchId === m.id);
   if(!t || !m.result) return;
   const r = m.result;
-  const oc = computeMatchOutcome(r.home, r.away, r.penaltyWinner || null).outcome;
+  const oc = statKindOf(r.home, r.away);
   t.outcome = oc === 'win' ? 'victoria' : (oc === 'loss' ? 'derrota' : 'empate');
   t.scoreLine = `${r.home}-${r.away}`;
   t.scorers = r.scorers;
@@ -4359,7 +4418,7 @@ function addTimelineEntry(m){
   // que un 0-0 ganado/perdido por penales quede bien contado acá también (antes esto miraba
   // solo el marcador, así que una clasificación por penales podía aparecer como "empate" en la
   // línea de tiempo y en el cálculo del máximo invicto).
-  const outcomeKind = computeMatchOutcome(r.home, r.away, r.penaltyWinner || null).outcome;
+  const outcomeKind = statKindOf(r.home, r.away);
   const outcome = outcomeKind === 'win' ? 'victoria' : (outcomeKind === 'loss' ? 'derrota' : 'empate');
   state.timeline = state.timeline || [];
   // Racha en curso y récord histórico: se actualiza ANTES de agregar este partido a la línea de
@@ -6182,7 +6241,9 @@ document.getElementById('spinBtn').addEventListener('click', () => {
     // Evento fatal dedicado, totalmente aparte del sistema de niveles: 0.2% de probabilidad, muy bajo a propósito.
     const dtDeathRoll = Math.random() < 0.002;
 
-    const tier = pickTier();
+    // Si salió la muerte del DT, la ruleta TIENE que caer en el gajo "Mortal" (antes caía en un
+    // gajo cualquiera, por ejemplo "Sin novedad", y después aparecía la muerte sin explicación).
+    const tier = dtDeathRoll ? (TIERS.find(t => t.id === 'mortal') || pickTier()) : pickTier();
     const range = angleRangeFor(tier);
     const targetSliceAngle = range.start + (range.end-range.start)*(0.15+Math.random()*0.7);
     const extraTurns = 5 + Math.floor(Math.random()*2);
@@ -6406,7 +6467,9 @@ const DT_DEATH_SCENARIOS = [
   'TE CAÍSTE DENTRO DE UN POZO DE OBRA SIN SEÑALIZAR, CERCA DEL PREDIO DE ENTRENAMIENTO.',
   'UN HINCHA ENFURECIDO POR UN CAMBIO TÁCTICO PROTAGONIZÓ UN EPISODIO QUE TERMINÓ CON TU VIDA.',
 ];
+let pendingReviveSave = null;
 function triggerDtDeath(){
+  pendingReviveSave = null;
   state.deceased = true;
   state.deathReason = DT_DEATH_SCENARIOS[Math.floor(Math.random()*DT_DEATH_SCENARIOS.length)];
   persist();
@@ -6418,6 +6481,31 @@ function triggerDtDeath(){
   deathScreen.classList.add('shake-modal');
   setTimeout(() => deathScreen.classList.remove('shake-modal'), 650);
 }
+// Revivir: deshace la muerte del DT y devuelve el perfil tal cual estaba. Funciona tanto si la
+// muerte pasó recién (partida en memoria) como si se la encuentra al iniciar sesión (guardado).
+document.getElementById('deathReviveBtn').addEventListener('click', () => {
+  document.getElementById('deathScreen').style.display = 'none';
+  if(pendingReviveSave){
+    const { user, pin, saved } = pendingReviveSave;
+    pendingReviveSave = null;
+    saved.state.deceased = false;
+    delete saved.state.deathReason;
+    startApp(user, pin, saved);
+    persist();
+    return;
+  }
+  state.deceased = false;
+  delete state.deathReason;
+  if(currentUser){
+    persist();
+    document.getElementById('appWrap').style.display = 'block';
+    try{ renderAll(); }catch(e){}
+    // Vuelve a dejar girable el partido en el que pasó (el giro quedó a medias).
+    try{ if(activeMatchId){ const mm = state.matches.find(x => x.id === activeMatchId); if(mm && !mm.event){ loadMatchIntoZone(activeMatchId); } } }catch(e){}
+  } else {
+    document.getElementById('loginScreen').style.display = 'flex';
+  }
+});
 document.getElementById('deathScreenBtn').addEventListener('click', () => {
   document.getElementById('deathScreen').style.display = 'none';
   currentUser = null;
@@ -8006,10 +8094,34 @@ try{
 // está restringido a [a-z0-9_.\-], así que solo el punto necesita reemplazo acá.
 function cloudKeyFor(user){ return user.toLowerCase().replace(/[.#$\[\]/]/g, '_'); }
 
-function showCloudSyncBanner(show){
+// El aviso de "no se pudo sincronizar" ya no aparece por un fallo suelto (un microcorte, una
+// pestaña en segundo plano): solo si fallan 3 guardados seguidos. Mientras tanto se reintenta
+// solo cada 30 segundos, y apenas un guardado sale bien el aviso desaparece. Se puede ocultar a
+// mano, y muestra el motivo técnico para poder diagnosticarlo si es un problema real.
+let cloudFailCount = 0, cloudBannerDismissed = false, cloudRetryTimer = null, lastCloudError = '';
+function showCloudSyncBanner(show, err){
   const banner = document.getElementById('cloudSyncFailBanner');
-  if(banner) banner.style.display = show ? 'block' : 'none';
+  if(!show){
+    cloudFailCount = 0; cloudBannerDismissed = false; lastCloudError = '';
+    if(banner) banner.style.display = 'none';
+    return;
+  }
+  cloudFailCount += 1;
+  if(err) lastCloudError = String((err && (err.code || err.message)) || err).slice(0, 90);
+  if(banner && cloudFailCount >= 3 && !cloudBannerDismissed){
+    const d = document.getElementById('cloudSyncDetail');
+    if(d) d.textContent = lastCloudError ? 'Motivo técnico: ' + lastCloudError : '';
+    banner.style.display = 'block';
+  }
+  if(!cloudRetryTimer && typeof setTimeout === 'function'){
+    cloudRetryTimer = setTimeout(() => { cloudRetryTimer = null; try{ persistToCloud(); }catch(e){} }, 30000);
+    if(cloudRetryTimer && cloudRetryTimer.unref) cloudRetryTimer.unref();
+  }
 }
+document.getElementById('cloudSyncDismiss').addEventListener('click', () => {
+  cloudBannerDismissed = true;
+  document.getElementById('cloudSyncFailBanner').style.display = 'none';
+});
 function showStaleSessionBanner(show){
   const banner = document.getElementById('staleSessionBanner');
   if(banner) banner.style.display = show ? 'block' : 'none';
@@ -8052,10 +8164,10 @@ function persistToCloud(){
       showStaleSessionBanner(false);
       ref.set(safePayload)
         .then(() => { showCloudSyncBanner(false); sessionBaselineSavedAt = safePayload.savedAt; })
-        .catch((e) => { console.warn('No se pudo sincronizar con la nube:', e); showCloudSyncBanner(true); });
+        .catch((e) => { console.warn('No se pudo sincronizar con la nube:', e); showCloudSyncBanner(true, e); });
     }).catch((e) => {
       console.warn('No se pudo verificar la nube antes de guardar:', e);
-      showCloudSyncBanner(true);
+      showCloudSyncBanner(true, e);
     });
   }catch(e){
     console.warn('No se pudo sincronizar con la nube:', e);
@@ -8326,6 +8438,7 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
   if(saved){
     if(saved.pin !== pin){ msg.textContent = 'Clave incorrecta para ese usuario.'; return; }
     if(saved.state && saved.state.deceased){
+      pendingReviveSave = { user, pin, saved };
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('deathScreenReason').textContent = saved.state.deathReason || DT_DEATH_SCENARIOS[0];
       document.getElementById('deathScreen').style.display = 'flex';
