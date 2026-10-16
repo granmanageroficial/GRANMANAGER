@@ -884,6 +884,7 @@
       <div class="rep-item"><span class="num" id="wonValue">0</span><span class="lbl">Ganados</span></div>
       <div class="rep-item"><span class="num" id="drawnValue">0</span><span class="lbl">Empatados</span></div>
       <div class="rep-item"><span class="num" id="lostValue">0</span><span class="lbl">Perdidos</span></div>
+      <div class="rep-item"><span class="num" id="effectivenessValue">—</span><span class="lbl">Efectividad</span></div>
       <div class="rep-item"><span class="num" id="eventsValue">0</span><span class="lbl">Eventos registrados</span></div>
     </div>
     <div class="unbeaten-card" id="unbeatenCard">
@@ -1330,7 +1331,7 @@
 // una esquina fija de la pantalla (#buildBadge) además de en el header de adentro del juego
 // (#headerBuildLine), para poder confirmar sin dudas si dos dispositivos están corriendo el
 // mismo archivo. Para la próxima entrega, alcanza con cambiar este único string.
-const BUILD_ID = 'RULEBATCH-32';
+const BUILD_ID = 'RULEBATCH-33';
 document.getElementById('buildBadge').textContent = BUILD_ID;
 const headerBuildLineEl = document.getElementById('headerBuildLine');
 if(headerBuildLineEl) headerBuildLineEl.textContent = `build ${BUILD_ID}`;
@@ -1723,6 +1724,13 @@ function computeMatchOutcome(home, away, penaltyWinner){
 // Para estadísticas, historial, rachas e invicto un partido igualado en el marcador es EMPATE,
 // aunque se haya definido por penales (como en la vida real). Ganar o perder los penales solo
 // pesa para pasar de fase (bonus de la serie), la prensa y el efecto emocional en las barras.
+// Efectividad del DT: puntos obtenidos sobre los posibles (3 por victoria, 1 por empate).
+function effectivenessText(st){
+  const played = (st && st.played) || 0;
+  if(played <= 0) return '—';
+  const pts = 3 * (st.won || 0) + (st.drawn || 0);
+  return Math.round((pts / (3 * played)) * 100) + '%';
+}
 function statKindOf(home, away){
   return home > away ? 'win' : (home < away ? 'loss' : 'draw');
 }
@@ -2279,6 +2287,7 @@ function renderProfile(){
   document.getElementById('wonValue').textContent = state.stintStats.won;
   document.getElementById('drawnValue').textContent = state.stintStats.drawn;
   document.getElementById('lostValue').textContent = state.stintStats.lost;
+  document.getElementById('effectivenessValue').textContent = effectivenessText(state.stintStats);
   // Combina el cálculo sobre la línea de tiempo visible (que ahora se recorta a los últimos 30
   // partidos) con el mejor histórico guardado aparte (state.maxUnbeatenStreak), para que una
   // racha vieja que ya salió del recorte no se "pierda" del máximo mostrado.
