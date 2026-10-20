@@ -756,6 +756,15 @@
   </div>
 </div>
 
+<div id="versionModal" class="modal-overlay" style="display:none; z-index:9999; overflow:auto;">
+  <div class="login-card" style="max-width:560px; width:94%; max-height:90vh; overflow:auto;">
+    <div class="checklist-title" id="versionModalTitle" style="margin-bottom:8px;"></div>
+    <div class="dateline" id="versionModalIntro" style="font-size:15px; line-height:1.4; margin-bottom:12px;"></div>
+    <div id="versionModalList"></div>
+    <button class="btn" id="versionModalCancel" style="width:100%; margin-top:10px; opacity:.8;">Cancelar</button>
+  </div>
+</div>
+
 <div class="wrap" id="appWrap" style="display:none;">
 
   <header>
@@ -764,7 +773,7 @@
       <div class="dateline" id="dateline"></div>
       <div class="dateline" id="headerBuildLine" style="margin-top:2px; opacity:0.5; font-size:11px;"></div>
       <div class="dateline" id="userLine" style="margin-top:4px;">
-        <span id="userLabel"></span><span id="frenzyBadge" style="display:none; color:var(--alert); font-weight:700;"> · 🔥 FRENÉTICO</span> · <button class="link-btn" id="manualSaveBtn" title="Forzar guardado de la partida">💾 Guardar</button> · <button class="link-btn" id="exportSaveBtn" title="Descargar una copia de seguridad como archivo">⬇️ Copia</button> · <button class="link-btn" id="importSaveBtn" title="Restaurar una copia de seguridad desde archivo">⬆️ Restaurar</button><input type="file" id="importSaveInput" accept="application/json" style="display:none;"> · <button class="link-btn" id="logoutBtn">Cerrar sesión</button>
+        <span id="userLabel"></span><span id="frenzyBadge" style="display:none; color:var(--alert); font-weight:700;"> · 🔥 FRENÉTICO</span> · <button class="link-btn" id="manualSaveBtn" title="Forzar guardado de la partida">💾 Guardar</button> · <button class="link-btn" id="exportSaveBtn" title="Descargar una copia de seguridad como archivo">⬇️ Copia</button> · <button class="link-btn" id="versionsBtn" title="Ver y restaurar versiones anteriores de la partida">🕘 Versiones</button> · <button class="link-btn" id="importSaveBtn" title="Restaurar una copia de seguridad desde archivo">⬆️ Restaurar</button><input type="file" id="importSaveInput" accept="application/json" style="display:none;"> · <button class="link-btn" id="logoutBtn">Cerrar sesión</button>
       </div>
     </div>
   </header>
@@ -786,8 +795,13 @@
   vieja -- resucitando lo que ya se había corregido o borrado en otro dispositivo. Ahora, antes de
   pisar la nube, se verifica que nadie guardó algo más nuevo desde otro lado; si lo hay, se avisa
   acá en vez de pisarlo. -->
-  <div id="staleSessionBanner" style="display:none; background:#2a2410; border:1px solid #a68b1f; color:#f0d878; padding:10px 14px; border-radius:10px; margin-bottom:14px; font-family:'Barlow Condensed', sans-serif; font-size:14px; line-height:1.4;">
-    🔄 Guardaste algo más reciente desde otro dispositivo o pestaña. Para no pisar esos cambios, esta pestaña no sincronizó con la nube esta vez: recargá la página antes de seguir jugando acá.
+  <div id="staleSessionBanner" style="display:none; position:sticky; top:0; z-index:50; background:#3a1010; border:2px solid #e04848; color:#ffd0d0; padding:12px 14px; border-radius:10px; margin-bottom:14px; font-family:'Barlow Condensed', sans-serif; font-size:15px; line-height:1.4;">
+    <b>⚠️ ESTA PESTAÑA ESTÁ DESACTUALIZADA — NO SE ESTÁ GUARDANDO NADA.</b><br>
+    Hay una versión más nueva guardada desde otro dispositivo o pestaña. Si seguís jugando acá, lo que hagas <b>no se guarda</b>. Elegí qué versión querés conservar (no se pierde ninguna: la otra queda en el historial).
+    <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn" id="staleChooseBtn" style="padding:6px 12px;">🔀 Elegir versión</button>
+      <button class="btn" id="staleCopyBtn" style="padding:6px 12px;">⬇️ Bajar copia de esta pestaña</button>
+    </div>
   </div>
 
   <nav id="tabs">
@@ -991,6 +1005,10 @@
       </div>
       <label>Detalle (opcional)</label>
       <input id="manualTrophyDetail" type="text" placeholder="Ej: le ganamos la final 2-1">
+      <div class="field-row" style="margin-top:8px;">
+        <div><label>Rival de la final (opcional)</label><input id="manualTrophyRival" type="text" placeholder="Si lo dejás vacío se busca solo"></div>
+        <div><label>Resultado (opcional)</label><input id="manualTrophyScore" type="text" placeholder="Ej: 2-1"></div>
+      </div>
       <div class="dateline" style="margin-top:6px;">Se registra para la temporada actual (<span id="manualTrophySeasonLabel"></span>).</div>
       <div style="display:flex; gap:8px; margin-top:8px;">
         <button class="btn" type="button" onclick="saveManualTrophy()">🏆 Registrar título</button>
@@ -1331,7 +1349,7 @@
 // una esquina fija de la pantalla (#buildBadge) además de en el header de adentro del juego
 // (#headerBuildLine), para poder confirmar sin dudas si dos dispositivos están corriendo el
 // mismo archivo. Para la próxima entrega, alcanza con cambiar este único string.
-const BUILD_ID = 'RULEBATCH-33';
+const BUILD_ID = 'RULEBATCH-35';
 document.getElementById('buildBadge').textContent = BUILD_ID;
 const headerBuildLineEl = document.getElementById('headerBuildLine');
 if(headerBuildLineEl) headerBuildLineEl.textContent = `build ${BUILD_ID}`;
@@ -1627,7 +1645,26 @@ function findTieSibling(m){
   if(!tie) return null;
   const otherLeg = tie.leg === 'ida' ? 'vuelta' : 'ida';
   const wanted = `${tie.phase}_${otherLeg}`;
-  return state.matches.find(x => x.id !== m.id && x.comp === m.comp && x.rival === m.rival && x.importance === wanted) || null;
+  // Bug real (RULEBATCH-35): se devolvía el PRIMER partido que coincidiera en competencia + rival +
+  // fase, así que si en una temporada anterior se había jugado la misma serie contra el mismo rival
+  // (algo normal en copas: FA Cup, etc.), la vuelta de ahora se sumaba contra la IDA VIEJA y el
+  // global salía mal (ej.: ida 4-0 de ahora, pero el global mostraba 1-0). Ahora, entre los
+  // candidatos, se elige el más cercano en fecha (la ida anterior a la vuelta, o la vuelta
+  // posterior a la ida); sin fechas válidas, el último cargado.
+  const cands = state.matches.filter(x => x.id !== m.id && x.comp === m.comp && x.rival === m.rival && x.importance === wanted);
+  if(!cands.length) return null;
+  if(cands.length === 1) return cands[0];
+  const t0 = Date.parse(m.date);
+  if(isNaN(t0)) return cands[cands.length - 1];
+  const wantBefore = tie.leg === 'vuelta'; // la ida va ANTES que la vuelta
+  const scored = cands.map(c => {
+    const t = Date.parse(c.date);
+    if(isNaN(t)) return { c, d: Infinity, wrongSide: 1 };
+    const diff = t - t0;
+    return { c, d: Math.abs(diff), wrongSide: ((wantBefore && diff > 0) || (!wantBefore && diff < 0)) ? 1 : 0 };
+  });
+  scored.sort((a, b) => (a.wrongSide - b.wrongSide) || (a.d - b.d));
+  return scored[0].c;
 }
 // Bonus/castigo EXTRA (además del efecto normal del partido en sí) por avanzar o quedar
 // eliminado en una serie/partido de copa, según la fase. Pedido del usuario: "a medida que
@@ -2748,7 +2785,13 @@ function renderPlayers(){
     return;
   }
   empty.style.display = 'none';
-  list.innerHTML = state.players.map(pl => {
+  // RULEBATCH-35: el plantel se muestra ordenado por posición (arquero, laterales, centrales,
+  // mediocampo, extremos, delantero) y, dentro de cada posición, en orden de carga. Es solo la
+  // vista: no se reordena state.players.
+  const POS_ORDER = ['PO','DFD','DFI','DFC','MCD','MC','MCO','MD','MI','ED','EI','DC'];
+  const posRank = pl => { const i = POS_ORDER.indexOf(pl.pos); return i === -1 ? 99 : i; };
+  const sortedPlayers = state.players.map((pl, i) => ({ pl, i })).sort((a, b) => (posRank(a.pl) - posRank(b.pl)) || (a.i - b.i)).map(x => x.pl);
+  list.innerHTML = sortedPlayers.map(pl => {
     const mood = getPlayerMood(pl.id);
     const currentTier = pl.tier || 'habitual';
     return `
@@ -3600,7 +3643,7 @@ document.getElementById('saveResult').addEventListener('click', () => {
         // prioridad más baja (igual cuenta como título real en el Palmarés, solo que con menos
         // impacto en las barras que un título de una competencia de la temporada).
         const priority = isExtraComp ? 'bajo' : ((state.profile.competitionPriority && state.profile.competitionPriority[m.comp]) || 'medio');
-        autoTitleWon = applyObjectiveOutcome(m.comp, 'Ganar el título', priority, true, 'campeon', true, m.date);
+        autoTitleWon = applyObjectiveOutcome(m.comp, 'Ganar el título', priority, true, 'campeon', true, m.date, finalInfoFromMatch(m));
         if(!state.profile.competitionResolvedThisSeason) state.profile.competitionResolvedThisSeason = {};
         state.profile.competitionResolvedThisSeason[m.comp] = 'Campeón';
         tieDecisionApplied.objectiveAutoResolved = true;
@@ -3641,7 +3684,7 @@ document.getElementById('saveResult').addEventListener('click', () => {
     const resolvedMap = state.profile.competitionResolvedThisSeason || (state.profile.competitionResolvedThisSeason = {});
     if(won && !resolvedMap[m.comp]){
       const priority = isExtraComp ? 'bajo' : ((state.profile.competitionPriority && state.profile.competitionPriority[m.comp]) || 'medio');
-      autoTitleWon = applyObjectiveOutcome(m.comp, 'Ganar el título', priority, true, 'Campeón', true, m.date);
+      autoTitleWon = applyObjectiveOutcome(m.comp, 'Ganar el título', priority, true, 'Campeón', true, m.date, finalInfoFromMatch(m));
       resolvedMap[m.comp] = 'Campeón';
       tieDecisionApplied.objectiveAutoResolved = true;
       if(!isEdit){
@@ -4144,7 +4187,7 @@ function buildSeasonSummary(label){
   res.forEach(r => (r.scorers || []).forEach(n => { scorers[n] = (scorers[n] || 0) + 1; }));
   const topScorers = Object.entries(scorers).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, goals]) => ({ name, goals }));
   const trophies = (state.trophies || []).filter(t => t.season === label);
-  const titles = trophies.filter(t => t.trophy && t.met).map(t => t.competition);
+  const titles = trophies.filter(t => t.trophy && t.met).map(t => t.competition + (t.finalRival ? ` (final vs ${t.finalRival}${t.finalScore ? ' ' + t.finalScore : ''})` : ''));
   const objectives = trophies.map(t => ({ competition: t.competition, objective: t.objective, met: !!t.met, position: t.position || '' }));
   const classics = res.filter(r => isClassicRival(r.rival)).map(r => ({ rival: r.rival, o: r.o, score: `${r.home}-${r.away}${r.pen ? ' (pen.)' : ''}` }));
   const played = res.length;
@@ -6495,11 +6538,12 @@ function triggerDtDeath(){
 document.getElementById('deathReviveBtn').addEventListener('click', () => {
   document.getElementById('deathScreen').style.display = 'none';
   if(pendingReviveSave){
-    const { user, pin, saved } = pendingReviveSave;
+    const { user, pin, saved, chosenOlder, maxSavedAt } = pendingReviveSave;
     pendingReviveSave = null;
     saved.state.deceased = false;
     delete saved.state.deathReason;
     startApp(user, pin, saved);
+    if(chosenOlder){ sessionBaselineSavedAt = maxSavedAt; localBaselineSavedAt = maxSavedAt; }
     persist();
     return;
   }
@@ -7337,7 +7381,29 @@ function formatObjectiveResult(comp, raw){
 // trofeo/registro en el Palmarés y mueve las barras. `midSeason: true` es para cuando se
 // registra ANTES del cierre de temporada (objetivo cumplido/definido a mitad de camino);
 // devuelve true si lo registrado fue un título ganado (para disparar el festejo).
-function applyObjectiveOutcome(comp, objective, priority, met, result, midSeason, dateStr){
+// RULEBATCH-35: de un partido de final ya cargado, saca contra quién fue y cómo salió (con el
+// global si fue una serie ida/vuelta y los penales si hubo).
+function finalInfoFromMatch(m){
+  const r = m && m.result;
+  if(!r) return { rival: (m && m.rival) || '', score: '' };
+  let sc = `${r.home}-${r.away}`;
+  const tie = parseTieLeg(m.importance);
+  if(tie && tie.leg === 'vuelta'){
+    const ida = findTieSibling(m);
+    if(ida && ida.result) sc += ` (global ${r.home + ida.result.home}-${r.away + ida.result.away})`;
+  }
+  if(r.penaltyWinner) sc += ' · definido por penales';
+  return { rival: m.rival || '', score: sc };
+}
+// Para títulos cargados a mano o al cierre de temporada: se busca el último partido de FINAL
+// ganado de esa competencia. Si no hay, queda vacío y se puede completar a mano.
+function guessFinalInfo(comp){
+  const finals = (state.matches || []).filter(x => x.comp === comp && x.status === 'jugado' && x.result && /^final/.test(x.importance || '') && x.result.home >= x.result.away);
+  if(!finals.length) return { rival: '', score: '' };
+  finals.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  return finalInfoFromMatch(finals[finals.length - 1]);
+}
+function applyObjectiveOutcome(comp, objective, priority, met, result, midSeason, dateStr, finalInfo){
   const club = state.profile.club || 'el club';
   // `result` llega crudo (fase de copa, posición numérica de liga, o texto libre de amistosos);
   // `display` es la versión legible que se guarda para mostrar en Palmarés/historial. La
@@ -7358,8 +7424,18 @@ function applyObjectiveOutcome(comp, objective, priority, met, result, midSeason
     position: display,
     resultRaw: result,
     midSeason: !!midSeason,
-    date: dateStr || ''
+    date: dateStr || '',
+    // RULEBATCH-35: con qué club se ganó (queda fijo aunque después cambies de equipo), y contra
+    // quién y por cuánto fue la final (automático si se puede, editable siempre).
+    club: state.profile.club || '',
+    finalRival: '',
+    finalScore: ''
   });
+  if(met && objective === 'Ganar el título'){
+    const fi = finalInfo || guessFinalInfo(comp);
+    state.trophies[0].finalRival = fi.rival || '';
+    state.trophies[0].finalScore = fi.score || '';
+  }
 
   let wonTitle = false;
   let appliedEffects = null;
@@ -7655,6 +7731,8 @@ function toggleManualTrophyForm(){
   if(opening){
     document.getElementById('manualTrophyComp').value = '';
     document.getElementById('manualTrophyDetail').value = '';
+    document.getElementById('manualTrophyRival').value = '';
+    document.getElementById('manualTrophyScore').value = '';
     document.getElementById('manualTrophyPriority').value = 'medio';
     document.getElementById('manualTrophySeasonLabel').textContent = state.season.year || state.profile.year || '—';
     document.getElementById('manualTrophyCompList').innerHTML = (state.profile.competitions || [])
@@ -7671,7 +7749,10 @@ function saveManualTrophy(){
   if(!comp){ alert('Escribí el nombre de la competencia.'); return; }
   const priority = document.getElementById('manualTrophyPriority').value || 'medio';
   const detail = document.getElementById('manualTrophyDetail').value.trim();
-  const wonTitle = applyObjectiveOutcome(comp, 'Ganar el título', priority, true, detail || 'Campeón', true);
+  const manualRival = document.getElementById('manualTrophyRival').value.trim();
+  const manualScore = document.getElementById('manualTrophyScore').value.trim();
+  const guessed = guessFinalInfo(comp);
+  const wonTitle = applyObjectiveOutcome(comp, 'Ganar el título', priority, true, detail || 'Campeón', true, undefined, { rival: manualRival || guessed.rival, score: manualScore || guessed.score });
   if(!state.profile.competitionResolvedThisSeason) state.profile.competitionResolvedThisSeason = {};
   state.profile.competitionResolvedThisSeason[comp] = detail || 'Campeón';
   toggleManualTrophyForm();
@@ -7723,6 +7804,11 @@ function renderTrophies(){
             <input id="editTrophyResult" type="text" value="${(t.trophy || t.position || '').replace(/"/g,'&quot;')}">
           </div>
         </div>
+        <div class="field-row" style="margin-top:8px;">
+          <div><label>Club con el que se ganó</label><input id="editTrophyClub" type="text" value="${(t.club || '').replace(/"/g,'&quot;')}"></div>
+          <div><label>Rival de la final</label><input id="editTrophyRival" type="text" value="${(t.finalRival || '').replace(/"/g,'&quot;')}"></div>
+          <div><label>Resultado de la final</label><input id="editTrophyScore" type="text" value="${(t.finalScore || '').replace(/"/g,'&quot;')}"></div>
+        </div>
         <div style="display:flex; gap:8px; margin-top:10px;">
           <button class="btn ghost small" type="button" onclick="saveTrophyEdit(${idx})">Guardar cambios</button>
           <button class="btn ghost small" type="button" onclick="cancelTrophyEdit()">Cancelar</button>
@@ -7732,8 +7818,8 @@ function renderTrophies(){
     return `
     <div class="match-row" style="cursor:default;">
       <div class="left">
-        <div class="rival">${t.competition || ''}${t.trophy ? ' — Campeón: '+t.trophy : (t.position ? ' — '+t.position : '')}</div>
-        <div class="when">Temporada ${t.season} · Objetivo: ${t.objective}${t.midSeason ? ' · registrado a mitad de temporada' : ''}</div>
+        <div class="rival">${t.competition || ''}${t.club ? ' · ' + escHtml(t.club) : ''}${t.trophy ? ' — Campeón: '+t.trophy : (t.position ? ' — '+t.position : '')}</div>
+        <div class="when">Temporada ${t.season}${t.finalRival ? ' · Final vs ' + escHtml(t.finalRival) + (t.finalScore ? ' ' + escHtml(t.finalScore) : '') : ''} · Objetivo: ${t.objective}${t.midSeason ? ' · registrado a mitad de temporada' : ''}</div>
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
         <div class="status-tag ${t.met ? 'jugado' : ''}" style="${!t.met ? 'color:var(--alert); border-color:var(--alert);' : ''}">${t.met ? 'cumplido' : 'no cumplido'}</div>
@@ -7778,6 +7864,9 @@ function saveTrophyEdit(idx){
   // registrado era realmente ganar el título, no cualquier objetivo cumplido.
   t.trophy = (met && t.objective === 'Ganar el título') ? result : '';
   t.position = result;
+  t.club = document.getElementById('editTrophyClub').value.trim();
+  t.finalRival = document.getElementById('editTrophyRival').value.trim();
+  t.finalScore = document.getElementById('editTrophyScore').value.trim();
   editingTrophyIdx = null;
   renderTrophies();
   renderTrophyCabinet();
@@ -7824,7 +7913,8 @@ function renderTrophyCabinet(){
     <div style="background:var(--paper-dark); border:1px solid var(--surface-border); border-radius:14px; padding:16px 18px; text-align:center; min-width:140px;">
       <div style="font-size:38px; line-height:1;">🏆</div>
       <div style="font-family:'Barlow Condensed', sans-serif; font-weight:700; font-size:15px; margin-top:8px; color:var(--ink);">${t.competition || ''}</div>
-      <div class="dateline" style="margin-top:2px;">Temporada ${t.season}</div>
+      <div class="dateline" style="margin-top:2px;">${t.club ? escHtml(t.club) + ' · ' : ''}Temporada ${t.season}</div>
+      ${t.finalRival ? `<div class="dateline" style="margin-top:2px;">Final vs ${escHtml(t.finalRival)}${t.finalScore ? ' ' + escHtml(t.finalScore) : ''}</div>` : ''}
     </div>
   `).join('');
 }
@@ -8136,9 +8226,198 @@ function showStaleSessionBanner(show){
   if(banner) banner.style.display = show ? 'block' : 'none';
 }
 
-function persistToCloud(){
+// ------------------ HISTORIAL DE VERSIONES / ELECCIÓN DE VERSIÓN (RULEBATCH-34) ------------------
+// Motivo: una cuenta perdió semanas de partida porque un dispositivo con datos viejos "ganó" por
+// fecha contra el que tenía los datos buenos, y nadie avisó ni guardó copia de lo reemplazado.
+// Ahora: (1) si local y nube difieren, el jugador ELIGE; (2) entrar NO renueva la fecha del
+// guardado; (3) lo reemplazado siempre se archiva; (4) hay historial local y en la nube.
+let localBaselineSavedAt = 0;
+function histKeyFor(u){ return 'granmanager_hist_' + u.toLowerCase(); }
+function tsKeyFor(u){ return 'granmanager_ts_' + u.toLowerCase(); }
+function snapAtKeyFor(u){ return 'granmanager_snapat_' + u.toLowerCase(); }
+function cloudSlotKey(u, suffix){ return 'saves/' + cloudKeyFor(u) + '__' + suffix; }
+function reloadApp(){ try{ location.reload(); }catch(e){} }
+function readLocalHistory(u){
+  try{ const a = JSON.parse(localStorage.getItem(histKeyFor(u)) || '[]'); return Array.isArray(a) ? a : []; }
+  catch(e){ return []; }
+}
+function pushLocalHistory(u, snap, label){
+  if(!u || !snap || !snap.state) return;
+  let list = readLocalHistory(u).filter(e => !(e.savedAt === (snap.savedAt||0) && e.label === label));
+  list.unshift({ at: Date.now(), label, savedAt: snap.savedAt || 0, payload: snap });
+  list = list.slice(0, 4);
+  while(list.length){
+    try{ localStorage.setItem(histKeyFor(u), JSON.stringify(list)); return; }
+    catch(e){ list.pop(); } // sin espacio: se descarta la más vieja y se reintenta
+  }
+}
+function summarizeSave(sv){
+  const st = (sv && sv.state) || {};
+  const matches = st.matches || [];
+  return {
+    club: (st.profile && st.profile.club) || '—',
+    season: (st.season && st.season.year) || '—',
+    played: matches.filter(m => m.status === 'jugado').length,
+    players: (st.players || []).length,
+    savedAt: (sv && sv.savedAt) || 0
+  };
+}
+function summariesDiffer(a, b){
+  return a.club !== b.club || a.season !== b.season || a.played !== b.played || a.players !== b.players;
+}
+function fmtVersionDate(ms){
+  if(!ms) return 'sin fecha';
+  try{ return new Date(ms).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }); }
+  catch(e){ return String(ms); }
+}
+// Muestra el modal con opciones; devuelve una promesa con la `key` elegida (o null si cancela).
+function showVersionPicker(title, intro, options, cancelLabel){
+  return new Promise(resolve => {
+    const modal = document.getElementById('versionModal');
+    document.getElementById('versionModalTitle').textContent = title;
+    document.getElementById('versionModalIntro').textContent = intro;
+    const list = document.getElementById('versionModalList');
+    list.innerHTML = '';
+    options.forEach(o => {
+      const sm = summarizeSave(o.save);
+      const card = document.createElement('div');
+      card.style.cssText = 'border:1px solid ' + (o.star ? '#d4af37' : '#444') + '; border-radius:10px; padding:10px 12px; margin-bottom:10px;';
+      card.innerHTML = '<div style="font-weight:700; font-size:16px;">' + escHtml(o.label) + (o.star ? ' <span style="color:#d4af37;">⭐ más avanzada</span>' : '') + '</div>' +
+        '<div style="font-size:14px; line-height:1.45; margin:4px 0 8px;">Guardada: <b>' + escHtml(fmtVersionDate(sm.savedAt)) + '</b><br>' +
+        'Club: <b>' + escHtml(sm.club) + '</b> · Temporada: <b>' + escHtml(sm.season) + '</b><br>' +
+        'Partidos jugados: <b>' + sm.played + '</b> · Jugadores: <b>' + sm.players + '</b></div>';
+      const b = document.createElement('button');
+      b.className = 'btn'; b.textContent = o.button || 'Elegir esta'; b.style.width = '100%';
+      b.dataset.key = o.key;
+      b.addEventListener('click', () => { modal.style.display = 'none'; resolve(o.key); });
+      card.appendChild(b);
+      list.appendChild(card);
+    });
+    const cancel = document.getElementById('versionModalCancel');
+    cancel.textContent = cancelLabel || 'Cancelar';
+    cancel.onclick = () => { modal.style.display = 'none'; resolve(null); };
+    modal.style.display = 'flex';
+  });
+}
+function readLocalSaveFor(u){
+  try{ const raw = localStorage.getItem(saveKeyFor(u)); return raw ? JSON.parse(raw) : null; }catch(e){ return null; }
+}
+function archiveToCloudPrev(u, snap){
+  if(!cloudDb || !snap || !snap.state) return;
+  try{
+    const safe = JSON.parse(JSON.stringify(snap));
+    cloudDb.ref(cloudSlotKey(u, 'prev')).set(Object.assign(safe, { snapAt: Date.now() })).catch(() => {});
+  }catch(e){}
+}
+// Fotos diarias rotativas en la nube (3 espacios): lo que había en la nube justo antes de la
+// primera escritura del día de este dispositivo.
+let cloudSnapDay = '';
+let staleLocked = false; // true = esta pestaña está desactualizada: no guarda nada hasta que se elija versión
+function maybeCloudSnapshot(remote){
+  if(!cloudDb || !currentUser || !remote || !remote.state) return;
+  const day = Math.floor(Date.now() / 86400000);
+  const dayKey = currentUser + ':' + day;
+  if(cloudSnapDay === dayKey) return;
+  cloudSnapDay = dayKey;
+  try{
+    const slotRef = cloudDb.ref(cloudSlotKey(currentUser, 'h' + (day % 3)));
+    slotRef.once('value').then(snap => {
+      const cur = snap.val();
+      if(cur && cur.snapDay === day) return;
+      slotRef.set(Object.assign(JSON.parse(JSON.stringify(remote)), { snapDay: day, snapAt: Date.now() })).catch(() => {});
+    }).catch(() => {});
+  }catch(e){}
+}
+function buildCurrentSnapshot(){
+  try{ return JSON.parse(JSON.stringify({ pin: currentPin, nextId, state, savedAt: localBaselineSavedAt || Date.now() })); }
+  catch(e){ return null; }
+}
+// Deja `snap` como partida activa (local + nube, con fecha nueva) y recarga.
+async function applyRestoredSave(snap){
+  const payload = { pin: snap.pin, nextId: snap.nextId, state: snap.state, savedAt: Date.now() };
+  const cur = buildCurrentSnapshot();
+  if(cur) pushLocalHistory(currentUser, cur, 'Antes de restaurar');
+  try{
+    localStorage.setItem(saveKeyFor(currentUser), JSON.stringify(payload));
+    localStorage.setItem(tsKeyFor(currentUser), String(payload.savedAt));
+  }catch(e){ console.warn('No se pudo guardar localmente al restaurar:', e); }
+  if(cloudDb){
+    try{ await cloudDb.ref('saves/' + cloudKeyFor(currentUser)).set(JSON.parse(JSON.stringify(payload))); }
+    catch(e){ console.warn('No se pudo subir la restauración a la nube:', e); }
+  }
+  localBaselineSavedAt = payload.savedAt; sessionBaselineSavedAt = payload.savedAt;
+  reloadApp();
+}
+async function openVersionsModal(){
+  if(!currentUser) return;
+  const options = [];
+  readLocalHistory(currentUser).forEach((e, i) => options.push({ key: 'L' + i, label: '💾 ' + (e.label || 'Copia local') + ' (en este dispositivo)', save: e.payload, button: 'Restaurar esta versión' }));
+  const slots = ['prev', 'h0', 'h1', 'h2'];
+  const fetched = {};
+  if(cloudDb){
+    await Promise.all(slots.map(sl => cloudDb.ref(cloudSlotKey(currentUser, sl)).once('value').then(sn => {
+      const v = sn.val();
+      if(v && v.state){ fetched['C' + sl] = v; options.push({ key: 'C' + sl, label: '☁️ ' + (sl === 'prev' ? 'Versión reemplazada en la última elección' : 'Foto diaria de la nube') , save: v, button: 'Restaurar esta versión' }); }
+    }).catch(() => {})));
+  }
+  // Más nuevas primero.
+  options.sort((a, b) => ((b.save.snapAt || b.save.savedAt || 0) - (a.save.snapAt || a.save.savedAt || 0)));
+  const intro = options.length
+    ? 'Elegí una versión para volver a ella. La partida actual se archiva antes de reemplazarla, así que no perdés nada. Al restaurar, la página se recarga y volvés a entrar.'
+    : 'Todavía no hay versiones anteriores guardadas. Se van creando solas mientras jugás (y cada vez que elegís entre dos versiones).';
+  const key = await showVersionPicker('🕘 Versiones de la partida', intro, options, 'Cerrar');
+  if(!key) return;
+  const chosen = options.find(o => o.key === key);
+  if(!chosen) return;
+  const sm = summarizeSave(chosen.save);
+  if(typeof confirm === 'function' && !confirm('¿Restaurar la versión del ' + fmtVersionDate(sm.savedAt) + ' (' + sm.played + ' partidos jugados)? La partida actual queda archivada.')) return;
+  await applyRestoredSave(chosen.save);
+}
+document.getElementById('versionsBtn').addEventListener('click', openVersionsModal);
+
+// Pestaña desactualizada: elegir qué versión se queda.
+async function resolveStaleSession(){
+  if(!currentUser) return;
+  const mem = buildCurrentSnapshot();
+  if(!mem) return;
+  const fr = await fetchCloudSave(currentUser);
+  const cloud = fr.ok ? fr.data : null;
+  const loc = readLocalSaveFor(currentUser);
+  // Solo cuenta como "versión más nueva" lo que esta pestaña NO conoce todavía.
+  let other = (cloud && (cloud.savedAt||0) > sessionBaselineSavedAt) ? cloud : null;
+  if(loc && (loc.savedAt||0) > localBaselineSavedAt && (!other || (loc.savedAt||0) > (other.savedAt||0))) other = loc;
+  if(!other) other = cloud;
+  if(!other){ showStaleSessionBanner(false); return; }
+  const memSum = summarizeSave(mem), otherSum = summarizeSave(other);
+  const key = await showVersionPicker('Elegí qué versión conservar',
+    'Esta pestaña tiene una versión y hay otra más nueva guardada. La que NO elijas se archiva en 🕘 Versiones para poder recuperarla.',
+    [
+      { key: 'other', label: 'La versión guardada (más nueva)', save: other, star: otherSum.played >= memSum.played, button: 'Quedarme con esta (recargar)' },
+      { key: 'mem', label: 'La de esta pestaña', save: mem, star: memSum.played > otherSum.played, button: 'Quedarme con esta pestaña' }
+    ], 'Decidir después');
+  if(key === 'other'){
+    pushLocalHistory(currentUser, mem, 'Pestaña desactualizada');
+    try{ localStorage.setItem(saveKeyFor(currentUser), JSON.stringify(other)); localStorage.setItem(tsKeyFor(currentUser), String(other.savedAt||0)); }catch(e){}
+    localBaselineSavedAt = other.savedAt || 0; sessionBaselineSavedAt = other.savedAt || 0;
+    staleLocked = false;
+    showStaleSessionBanner(false);
+    reloadApp();
+  }else if(key === 'mem'){
+    pushLocalHistory(currentUser, other, 'Reemplazada por esta pestaña');
+    archiveToCloudPrev(currentUser, other);
+    const top = Math.max(other.savedAt||0, (cloud && cloud.savedAt)||0, (loc && loc.savedAt)||0);
+    localBaselineSavedAt = top; sessionBaselineSavedAt = top;
+    staleLocked = false;
+    showStaleSessionBanner(false);
+    persist();
+  }
+}
+document.getElementById('staleChooseBtn').addEventListener('click', resolveStaleSession);
+document.getElementById('staleCopyBtn').addEventListener('click', () => document.getElementById('exportSaveBtn').click());
+
+function persistToCloud(savedAtOverride){
   if(!currentUser || !cloudDb) return;
-  const payload = { pin: currentPin, nextId, state, savedAt: Date.now() };
+  const payload = { pin: currentPin, nextId, state, savedAt: (typeof savedAtOverride === 'number' && savedAtOverride) ? savedAtOverride : Date.now() };
   // Bug real (causa de fondo de "la ruleta se traba después de girar"): un evento recién elegido
   // trae title/body como FUNCIONES. localStorage las descarta en silencio al pasar por
   // JSON.stringify, pero Firebase Realtime Database es más estricto: si detecta una función en
@@ -8167,10 +8446,13 @@ function persistToCloud(){
     ref.once('value').then(snap => {
       const remote = snap.val();
       if(remote && (remote.savedAt||0) > sessionBaselineSavedAt){
+        staleLocked = true;
         showStaleSessionBanner(true);
         return;
       }
+      staleLocked = false;
       showStaleSessionBanner(false);
+      maybeCloudSnapshot(remote);
       ref.set(safePayload)
         .then(() => { showCloudSyncBanner(false); sessionBaselineSavedAt = safePayload.savedAt; })
         .catch((e) => { console.warn('No se pudo sincronizar con la nube:', e); showCloudSyncBanner(true, e); });
@@ -8215,11 +8497,32 @@ function saveKeyFor(user){ return 'granmanager_save_' + user.toLowerCase(); }
 // guardado se muestra en un cartel visible y persistente hasta que un guardado vuelva a
 // funcionar, en vez de fallar en silencio.
 let saveIsFailing = false;
-function persist(){
+function persist(keepSavedAt){
   if(!currentUser) return;
-  const payload = { pin: currentPin, nextId, state, savedAt: Date.now() };
+  const savedAt = (typeof keepSavedAt === 'number' && keepSavedAt) ? keepSavedAt : Date.now();
+  const payload = { pin: currentPin, nextId, state, savedAt };
+  if(staleLocked){ showStaleSessionBanner(true); return; }
   try{
+    // Otra pestaña de ESTE navegador guardó algo más nuevo que lo que esta pestaña conoce:
+    // no se pisa (ni local ni nube) y se avisa fuerte.
+    const tsRaw = localStorage.getItem(tsKeyFor(currentUser));
+    const storedTs = tsRaw ? parseInt(tsRaw, 10) : 0;
+    if(storedTs && storedTs > localBaselineSavedAt){
+      staleLocked = true;
+      showStaleSessionBanner(true);
+      return;
+    }
+    // Foto local automática cada 6 horas (de lo que había antes de este guardado).
+    const snapRaw = localStorage.getItem(snapAtKeyFor(currentUser));
+    const lastSnap = snapRaw ? parseInt(snapRaw, 10) : 0;
+    if(Date.now() - lastSnap > 6 * 3600 * 1000){
+      const prev = readLocalSaveFor(currentUser);
+      if(prev && prev.state){ pushLocalHistory(currentUser, prev, 'Automática'); }
+      localStorage.setItem(snapAtKeyFor(currentUser), String(Date.now()));
+    }
     localStorage.setItem(saveKeyFor(currentUser), JSON.stringify(payload));
+    try{ localStorage.setItem(tsKeyFor(currentUser), String(savedAt)); }catch(e){}
+    localBaselineSavedAt = savedAt;
     if(saveIsFailing){
       saveIsFailing = false;
       const banner = document.getElementById('saveFailBanner');
@@ -8231,7 +8534,7 @@ function persist(){
     const banner = document.getElementById('saveFailBanner');
     if(banner) banner.style.display = 'block';
   }
-  persistToCloud();
+  persistToCloud(savedAt);
 }
 
 // ------------------ COPIA DE SEGURIDAD MANUAL (exportar/importar a archivo) ------------------
@@ -8340,6 +8643,8 @@ function startApp(user, pin, loadedData){
   // Esta sesión arranca "al día" con lo que acaba de cargar (o con 0 si es una cuenta nueva, sin
   // nada guardado todavía en ningún lado). Ver sessionBaselineSavedAt / persistToCloud.
   sessionBaselineSavedAt = (loadedData && loadedData.savedAt) || 0;
+  localBaselineSavedAt = sessionBaselineSavedAt;
+  staleLocked = false;
   if(loadedData){
     nextId = loadedData.nextId || nextId;
     Object.assign(state, loadedData.state);
@@ -8437,8 +8742,35 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
   }
 
   let saved = localSaved;
+  let chosenOlder = false, maxSavedAt = 0;
   if(cloudSaved && (!localSaved || (cloudSaved.savedAt||0) >= (localSaved.savedAt||0))){
     saved = cloudSaved;
+  }
+  // RULEBATCH-34: si local y nube son versiones DISTINTAS, no se decide solo por fecha: se elige.
+  if(localSaved && cloudSaved && (localSaved.savedAt||0) !== (cloudSaved.savedAt||0)){
+    const ls = summarizeSave(localSaved), cs = summarizeSave(cloudSaved);
+    if(summariesDiffer(ls, cs)){
+      if(localSaved.pin !== pin && cloudSaved.pin !== pin){
+        loginBtn.disabled = false; loginBtn.textContent = originalLabel;
+        msg.textContent = 'Clave incorrecta para ese usuario.'; return;
+      }
+      const localStar = ls.played > cs.played || (ls.played === cs.played && ls.savedAt >= cs.savedAt);
+      loginBtn.disabled = false; loginBtn.textContent = originalLabel;
+      const key = await showVersionPicker('⚠️ Tenés dos versiones distintas',
+        'Este dispositivo y la nube tienen partidas diferentes. Elegí cuál querés usar. La que no elijas se guarda en 🕘 Versiones por si te arrepentís.',
+        [
+          { key: 'cloud', label: '☁️ Versión de la nube (otros dispositivos)', save: cloudSaved, star: !localStar },
+          { key: 'local', label: '📱 Versión de este dispositivo', save: localSaved, star: localStar }
+        ], 'Cancelar (no entrar)');
+      if(!key){ msg.textContent = 'Elegí una versión para entrar.'; return; }
+      const chosen = key === 'cloud' ? cloudSaved : localSaved;
+      const loser = key === 'cloud' ? localSaved : cloudSaved;
+      saved = chosen;
+      maxSavedAt = Math.max(localSaved.savedAt||0, cloudSaved.savedAt||0);
+      chosenOlder = (chosen.savedAt||0) < (loser.savedAt||0);
+      pushLocalHistory(user, loser, 'Reemplazada al elegir versión');
+      archiveToCloudPrev(user, loser);
+    }
   }
 
   loginBtn.disabled = false;
@@ -8447,15 +8779,22 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
   if(saved){
     if(saved.pin !== pin){ msg.textContent = 'Clave incorrecta para ese usuario.'; return; }
     if(saved.state && saved.state.deceased){
-      pendingReviveSave = { user, pin, saved };
+      pendingReviveSave = { user, pin, saved, chosenOlder, maxSavedAt };
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('deathScreenReason').textContent = saved.state.deathReason || DT_DEATH_SCENARIOS[0];
       document.getElementById('deathScreen').style.display = 'flex';
       return;
     }
     startApp(user, pin, saved);
-    // Sincroniza local y nube con la versión ganadora, para que ambos queden alineados.
-    persist();
+    // Se alinean local y nube con la versión elegida SIN renovar su fecha (así entrar desde un
+    // dispositivo viejo no la convierte en "la más nueva"). Si se eligió la más vieja a propósito,
+    // ahí sí pasa a ser la vigente, con fecha nueva.
+    if(chosenOlder){
+      sessionBaselineSavedAt = maxSavedAt; localBaselineSavedAt = maxSavedAt;
+      persist();
+    }else{
+      persist(saved.savedAt || undefined);
+    }
   } else {
     state.frenzyMode = document.getElementById('frenzyModeCheck').checked;
     startApp(user, pin, null);
