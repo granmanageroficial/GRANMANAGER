@@ -713,6 +713,7 @@
       <label>Importancia / Fase</label>
       <select id="editMatchImportance"></select>
     </div>
+    <button class="btn ghost" id="editMatchResultBtn" type="button" style="display:none; width:100%; margin-top:14px;">📝 Editar resultado y goleadores</button>
     <div style="display:flex; gap:10px; margin-top:20px;">
       <button class="btn ghost" id="editMatchCancelBtn" style="flex:1;">Cancelar</button>
       <button class="btn" id="editMatchConfirmBtn" style="flex:1;">Guardar cambios</button>
@@ -1349,7 +1350,7 @@
 // una esquina fija de la pantalla (#buildBadge) además de en el header de adentro del juego
 // (#headerBuildLine), para poder confirmar sin dudas si dos dispositivos están corriendo el
 // mismo archivo. Para la próxima entrega, alcanza con cambiar este único string.
-const BUILD_ID = 'RULEBATCH-35';
+const BUILD_ID = 'RULEBATCH-36';
 document.getElementById('buildBadge').textContent = BUILD_ID;
 const headerBuildLineEl = document.getElementById('headerBuildLine');
 if(headerBuildLineEl) headerBuildLineEl.textContent = `build ${BUILD_ID}`;
@@ -3082,6 +3083,100 @@ function renderMatches(){
   persist();
 }
 
+// ------------------ RULEBATCH-36: deshacer / rehacer el efecto de un resultado ------------------
+// Multiplicador con el que se aplicó (o se aplicaría) el resultado de un partido.
+function matchEffectMult(m){
+  const info = m.importance ? importanceInfo(m.comp, m.importance) : null;
+  const mult = info ? info.mult : 1;
+  const isExtra = !!(state.profile.competitions && state.profile.competitions.length && !state.profile.competitions.includes(m.comp));
+  return isExtra ? mult * EXTRA_COMP_DAMPEN : mult;
+}
+// Deshace TODO lo que sumó el resultado de un partido: goleadores/cara a cara/temporada, barras,
+// PJ/G/E/P, reputación, bonus de serie y título automático. Con keepTimeline:false (borrar el
+// partido) además saca el partido de la línea de tiempo y de los informes, y recalcula rachas.
+// Bug real (RULEBATCH-36): borrar un partido ya jugado dejaba sus derrotas/victorias contadas en
+// las estadísticas y sus efectos en las barras; solo se deshacían goleadores y cara a cara.
+function revertMatchResult(m, opts){
+  opts = opts || {};
+  const old = m.result;
+  if(!old) return;
+  const mult = (typeof old.appliedMult === 'number') ? old.appliedMult : matchEffectMult(m);
+  const oldOutcome = computeMatchOutcome(old.home, old.away, old.penaltyWinner || null);
+  const oldKind = aggKindFor(old);
+  if(old.aggMeta) applyMatchAggregates(m, old, -1, oldKind, old.aggMeta);
+  Object.entries(oldOutcome.effects).forEach(([stat, val]) => { if(val !== 0) adjustStatRaw(stat, -val * mult); });
+  const st = state.stintStats;
+  if(oldKind === 'win'){
+    st.won = Math.max(0, st.won - 1); st.played = Math.max(0, st.played - 1);
+    state.reputation -= Math.round(3 * mult);
+  } else if(oldKind === 'loss'){
+    st.lost = Math.max(0, st.lost - 1); st.played = Math.max(0, st.played - 1);
+    state.reputation += Math.round(3 * mult);
+    state.consecutiveLosses = Math.max(0, (state.consecutiveLosses || 0) - 1);
+  } else {
+    st.drawn = Math.max(0, st.drawn - 1); st.played = Math.max(0, st.played - 1);
+  }
+  // Bonus/castigo de serie y título/objetivo automático (ver saveResult).
+  if(old.tieDecision){
+    Object.entries(old.tieDecision.effects || {}).forEach(([stat, val]) => { if(val !== 0) adjustStatRaw(stat, -val); });
+    state.reputation -= old.tieDecision.reputationDelta || 0;
+    if(old.tieDecision.objectiveAutoResolved) revertResolvedObjectiveEffects(m.comp);
+  }
+  if(!opts.keepTimeline){
+    state.timeline = (state.timeline || []).filter(t => t.matchId !== m.id);
+    state.eventHistory = (state.eventHistory || []).filter(e => e.matchId !== m.id);
+    state.consecutiveLosses = trailingRun(state.timeline, t => t.outcome === 'derrota');
+    refreshStreaksFromTimeline();
+  }
+}
+// Vuelve a aplicar el resultado de un partido ya jugado después de cambiarle competencia, rival o
+// importancia (los efectos dependen de eso): deshace con los datos viejos y aplica con los nuevos.
+function reapplyMatchResult(m){
+  const res = m.result;
+  if(!res) return;
+  const prevMeta = res.aggMeta || {};
+  const meta = { season: prevMeta.season || seasonLabel(), club: prevMeta.club || state.profile.club || '', rival: m.rival };
+  if(prevMeta.inSeason !== undefined) meta.inSeason = prevMeta.inSeason;
+  meta.kind = statKindOf(res.home, res.away);
+  res.aggMeta = meta;
+  delete res.tieDecision;
+  const mult = matchEffectMult(m);
+  res.appliedMult = mult;
+  applyMatchAggregates(m, res, 1, meta.kind, meta);
+  const outcome = computeMatchOutcome(res.home, res.away, res.penaltyWinner || null);
+  Object.entries(outcome.effects).forEach(([stat, val]) => { if(val !== 0) adjustStatRaw(stat, val * mult); });
+  const st = state.stintStats;
+  st.played += 1;
+  if(meta.kind === 'win'){ st.won += 1; state.reputation += Math.round(3 * mult); }
+  else if(meta.kind === 'loss'){ st.lost += 1; state.reputation -= Math.round(3 * mult); }
+  else { st.drawn += 1; }
+}
+// Una sola vez: borrados hechos antes de este arreglo dejaron partidos fantasma contados en PJ/G/E/P
+// y en la línea de tiempo. Se vuelve a contar desde los partidos que de verdad existen.
+function reconcileStatsFromMatches(){
+  if(state.statsReconciled36) return;
+  state.statsReconciled36 = true;
+  const ms = (state.matches || []).filter(m => m.status === 'jugado' && m.result);
+  const real = { played: ms.length, won: 0, drawn: 0, lost: 0 };
+  ms.forEach(m => { const k = statKindOf(m.result.home, m.result.away); if(k === 'win') real.won++; else if(k === 'loss') real.lost++; else real.drawn++; });
+  const st = state.stintStats || (state.stintStats = { played:0, won:0, drawn:0, lost:0, seasons:0, titles:0 });
+  const ids = new Set((state.matches || []).map(m => m.id));
+  const tlBefore = (state.timeline || []).length;
+  state.timeline = (state.timeline || []).filter(t => t.matchId === undefined || t.matchId === null || ids.has(t.matchId));
+  if(state.seasonStats && Array.isArray(state.seasonStats.results)) state.seasonStats.results = state.seasonStats.results.filter(r => ids.has(r.matchId));
+  const differs = st.played !== real.played || st.won !== real.won || st.drawn !== real.drawn || st.lost !== real.lost;
+  if(differs){
+    const before = `${st.played} PJ · ${st.won}G ${st.drawn}E ${st.lost}P`;
+    st.played = real.played; st.won = real.won; st.drawn = real.drawn; st.lost = real.lost;
+    state.eventHistory.unshift({ matchId:null, rival:'', date:'', tag:'ESTADÍSTICAS', title:'Estadísticas corregidas',
+      body:`Se volvieron a contar tus partidos jugados: antes figuraba ${before} y ahora ${real.played} PJ · ${real.won}G ${real.drawn}E ${real.lost}P (había partidos borrados que seguían sumando).` });
+  }
+  if(differs || state.timeline.length !== tlBefore){
+    state.consecutiveLosses = trailingRun(state.timeline, t => t.outcome === 'derrota');
+    refreshStreaksFromTimeline();
+  }
+}
+
 // Elimina un partido cargado por error. Pide confirmación siempre (es destructivo y no se puede
 // deshacer), avisando además si el partido ya tiene un evento de la ruleta o un resultado
 // cargado, para que no se borre por accidente algo que ya se jugó.
@@ -3090,13 +3185,14 @@ function deleteMatch(id){
   if(idx === -1) return;
   const m = state.matches[idx];
   const detalle = m.result
-    ? ' Ya tiene un resultado cargado: se va a perder.'
+    ? ' Ya tiene un resultado cargado: se va a perder y también se deshacen sus efectos en estadísticas, barras y reputación.'
     : (m.event ? ' Ya tiene un evento de la ruleta cargado: se va a perder.' : '');
   if(!confirm(`¿Eliminar el partido vs ${m.rival}${m.date ? ' ('+m.date+')' : ''} del calendario?${detalle}`)) return;
   // RULEBATCH-29: si el partido tenía resultado, se deshacen también goleadores, cara a cara y
   // resumen de temporada (exactamente lo que había sumado, según aggMeta).
-  if(m.result && m.result.aggMeta){
-    applyMatchAggregates(m, m.result, -1, aggKindFor(m.result), m.result.aggMeta);
+  // RULEBATCH-36: se deshace TODO el efecto del resultado (PJ/G/E/P, barras, reputación, rachas...).
+  if(m.result){
+    revertMatchResult(m, { keepTimeline: false });
   }
   state.matches.splice(idx, 1);
   if(activeMatchId === id){
@@ -3108,6 +3204,9 @@ function deleteMatch(id){
   renderGameDate();
   renderNextMatchBox();
   renderOnboardingChecklist();
+  renderProfile();
+  renderTimeline();
+  renderEventHistory();
 }
 
 // Mueve un partido una posición hacia atrás (-1) o hacia adelante (+1) en el orden del
@@ -3153,8 +3252,15 @@ function openEditMatch(id){
   const kind = m.comp ? competitionKind(m.comp) : 'liga';
   const importanceSelect = document.getElementById('editMatchImportance');
   importanceSelect.innerHTML = IMPORTANCE_OPTIONS[kind].map(o => `<option value="${o.value}" ${o.value===m.importance?'selected':''}>${o.label}</option>`).join('');
+  document.getElementById('editMatchResultBtn').style.display = (m.status === 'jugado' && m.result) ? 'block' : 'none';
   document.getElementById('editMatchModal').style.display = 'flex';
 }
+document.getElementById('editMatchResultBtn').addEventListener('click', () => {
+  const id = editingMatchId;
+  editingMatchId = null;
+  document.getElementById('editMatchModal').style.display = 'none';
+  if(id !== null) openMatch(id);
+});
 document.getElementById('editMatchCancelBtn').addEventListener('click', () => {
   editingMatchId = null;
   document.getElementById('editMatchModal').style.display = 'none';
@@ -3167,15 +3273,39 @@ document.getElementById('editMatchConfirmBtn').addEventListener('click', () => {
   }
   const rival = document.getElementById('editMatchRival').value.trim();
   if(!rival){ alert('Ingresá el nombre del rival.'); return; }
-  m.comp = document.getElementById('editMatchComp').value.trim();
+  const newComp = document.getElementById('editMatchComp').value.trim();
+  const newDate = document.getElementById('editMatchDate').value.trim();
+  const newImportance = document.getElementById('editMatchImportance').value;
+  // RULEBATCH-36: un partido ya jugado también se puede editar. Si cambian la competencia, el
+  // rival o la importancia, sus efectos (barras, cara a cara, estadísticas) se rehacen con los
+  // datos nuevos, deshaciendo antes los viejos.
+  const coreChanged = m.status === 'jugado' && m.result && (newComp !== (m.comp || '') || rival !== m.rival || newImportance !== m.importance);
+  if(coreChanged) revertMatchResult(m, { keepTimeline: true });
+  m.comp = newComp;
   m.rival = rival;
-  m.date = document.getElementById('editMatchDate').value.trim();
-  m.importance = document.getElementById('editMatchImportance').value;
+  m.date = newDate;
+  m.importance = newImportance;
+  if(coreChanged) reapplyMatchResult(m);
+  if(m.status === 'jugado' && m.result){
+    const t = (state.timeline || []).find(x => x.matchId === m.id);
+    if(t){ t.rival = m.rival; t.comp = m.comp; t.date = m.date; }
+    const meta = m.result.aggMeta;
+    if(state.seasonStats && Array.isArray(state.seasonStats.results)){
+      const r = state.seasonStats.results.find(x => x.matchId === m.id);
+      if(r){ r.rival = m.rival; r.comp = m.comp; r.date = m.date; }
+    }
+    const rec = meta && state.h2h && state.h2h[meta.club] && state.h2h[meta.club][meta.rival];
+    if(rec && rec.last){ const l = rec.last.find(x => x.matchId === m.id); if(l){ l.date = m.date; l.comp = m.comp; } }
+    refreshStreaksFromTimeline();
+  }
   editingMatchId = null;
   document.getElementById('editMatchModal').style.display = 'none';
   renderMatches();
   renderGameDate();
   renderNextMatchBox();
+  renderProfile();
+  renderTimeline();
+  renderExtraStats();
 });
 
 // ------------------ VISTA DE PARTIDO ------------------
@@ -3299,7 +3429,7 @@ function loadMatchIntoZone(id){
     document.getElementById('scoreAway').value='';
     document.getElementById('matchNote').value='';
   }
-  document.getElementById('matchResultForm').style.display = m.event ? 'block' : 'none';
+  document.getElementById('matchResultForm').style.display = (m.event || m.result) ? 'block' : 'none';
   document.getElementById('saveResult').textContent = m.result ? 'Corregir resultado' : 'Guardar resultado';
   updateTieAggregateNote();
 
@@ -3449,44 +3579,8 @@ document.getElementById('saveResult').addEventListener('click', () => {
   const effectiveMult = isExtraComp ? mult * EXTRA_COMP_DAMPEN : mult;
 
   if(isEdit){
-    const oldOutcome = computeMatchOutcome(oldResult.home, oldResult.away, oldResult.penaltyWinner || null);
-    const oldStatKind = aggKindFor(oldResult);
-    // Deshace goleadores / cara a cara / resultados de la temporada que había sumado este resultado.
-    if(oldResult.aggMeta) applyMatchAggregates(m, oldResult, -1, oldStatKind, oldResult.aggMeta);
-    Object.entries(oldOutcome.effects).forEach(([stat, val]) => { if(val !== 0) adjustStatRaw(stat, -val * effectiveMult); });
-    if(oldStatKind === 'win'){
-      state.stintStats.won = Math.max(0, state.stintStats.won - 1);
-      state.stintStats.played = Math.max(0, state.stintStats.played - 1);
-      state.reputation -= Math.round(3*effectiveMult);
-    } else if(oldStatKind === 'loss'){
-      state.stintStats.lost = Math.max(0, state.stintStats.lost - 1);
-      state.stintStats.played = Math.max(0, state.stintStats.played - 1);
-      state.reputation += Math.round(3*effectiveMult);
-      state.consecutiveLosses = Math.max(0, (state.consecutiveLosses||0) - 1);
-    } else {
-      state.stintStats.drawn = Math.max(0, state.stintStats.drawn - 1);
-      state.stintStats.played = Math.max(0, state.stintStats.played - 1);
-    }
-    // Si al corregir este resultado ya se había aplicado el bonus/castigo de "avanzó/quedó
-    // eliminado de la serie" (ver TIE_DECIDED_BONUS más abajo), hay que deshacerlo también antes
-    // de recalcular -- si no, corregir un resultado de vuelta podía dejar el bonus de la serie
-    // vieja pegado para siempre, aunque el resultado real haya cambiado.
-    if(oldResult.tieDecision){
-      Object.entries(oldResult.tieDecision.effects).forEach(([stat, val]) => { if(val !== 0) adjustStatRaw(stat, -val); });
-      state.reputation -= oldResult.tieDecision.reputationDelta || 0;
-      // Bug real reportado por el usuario: ganar la FINAL de una copa no quedaba registrado como
-      // título (ver más abajo, donde ahora se registra sola). Si se corrige el resultado de una
-      // final que YA había quedado como "avanza" (campeón), hay que deshacer también ESE título
-      // automático antes de recalcular -- si no, corregir el marcador podía dejar un título
-      // fantasma pegado aunque el resultado real haya cambiado a una derrota.
-      // Cubre tanto el título automático (ganar la final) como el nuevo registro automático del
-      // objetivo al quedar eliminado en cualquier fase: si esta eliminación/avance ya había
-      // resuelto el objetivo de la competencia, hay que deshacer ESE efecto también antes de
-      // recalcular con el resultado corregido.
-      if(oldResult.tieDecision.objectiveAutoResolved){
-        revertResolvedObjectiveEffects(m.comp);
-      }
-    }
+    // RULEBATCH-36: la reversión vive en revertMatchResult (la comparte el borrado de partidos).
+    revertMatchResult(m, { keepTimeline: true });
   }
 
   state._suppressExtremeChecks = true;
@@ -3522,7 +3616,7 @@ document.getElementById('saveResult').addEventListener('click', () => {
   const statKind = statKindOf(home, away);
   const aggMeta = (isEdit && oldResult.aggMeta) ? oldResult.aggMeta : { season: seasonLabel(), club: state.profile.club || '', rival: m.rival };
   aggMeta.kind = statKind;
-  m.result = { home, away, scorers: scorersNames.join(', '), note: document.getElementById('matchNote').value.trim(), penaltyWinner, aggMeta };
+  m.result = { home, away, scorers: scorersNames.join(', '), note: document.getElementById('matchNote').value.trim(), penaltyWinner, aggMeta, appliedMult: effectiveMult };
   m.status = 'jugado';
   const isBigMatch = mult >= 1.6;
   const outcome = computeMatchOutcome(home, away, penaltyWinner);
@@ -3897,6 +3991,7 @@ function ensureCareerState(){
   if(state.profile && !Array.isArray(state.profile.classicRivals)) state.profile.classicRivals = [];
   if(state.profile && typeof state.profile.superClassic !== 'string') state.profile.superClassic = '';
   migratePenaltyStats();
+  reconcileStatsFromMatches();
   if(!state.careerSeeded){
     state.careerSeeded = true;
     seedCareerStateFromHistory();
@@ -4017,10 +4112,15 @@ function refreshStreaksFromTimeline(){
     }
   });
   state.maxUnbeatenStreak = Math.max(state.maxUnbeatenStreak || 0, state.unbeatenRecord.count || 0);
+  // RULEBATCH-36: derrotas consecutivas también se recalculan desde la línea de tiempo cuando se
+  // corrige/borra/edita un partido (antes quedaba un -1 aproximado que podía desfasarse). Si la
+  // racha ocupa toda la ventana de 30 partidos visibles, se conserva el valor guardado.
+  const lossRun = trailingRun(tl, t => t.outcome === 'derrota');
+  if(lossRun < tl.length || tl.length < 30) state.consecutiveLosses = lossRun;
 }
 function updateTimelineEntryForEdit(m){
   const t = (state.timeline || []).find(x => x.matchId === m.id);
-  if(!t || !m.result) return;
+  if(!t || !m.result){ refreshStreaksFromTimeline(); return; }
   const r = m.result;
   const oc = statKindOf(r.home, r.away);
   t.outcome = oc === 'win' ? 'victoria' : (oc === 'loss' ? 'derrota' : 'empate');
